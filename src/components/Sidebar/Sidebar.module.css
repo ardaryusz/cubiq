@@ -1,0 +1,88 @@
+.sidebar {
+  width: 260px;
+  background-color: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-color);
+  padding: 10px;
+}
+
+.newChatBtn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 15px;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  color: var(--text-main);
+}
+
+.newChatBtn:hover {
+  background-color: rgba(0,0,0,0.05);
+}
+
+html.dark .newChatBtn:hover {
+  background-color: rgba(255,255,255,0.05);
+}
+
+.chatList {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.chatItem {
+  padding: 10px;
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
+.chatItem:hover {
+  background-color: rgba(0,0,0,0.05);
+}
+html.dark .chatItem:hover {
+  background-color: rgba(255,255,255,0.05);
+}
+
+.chatItemActive {
+  background-color: rgba(0,0,0,0.1);
+  font-weight: 500;
+}
+html.dark .chatItemActive {
+  background-color: rgba(255,255,255,0.1);
+}
+
+.bottomActions {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.actionBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  color: var(--text-main);
+}
+.actionBtn:hover {
+  background-color: rgba(0,0,0,0.05);
+}
+html.dark .actionBtn:hover {
+  background-color: rgba(255,255,255,0.05);
+}
