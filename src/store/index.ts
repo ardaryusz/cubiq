@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import type { Chat, Settings } from '../types';
+import type { Chat, Settings, Preset } from '../types';
 import * as ipc from '../lib/ipc';
 
 interface AppState {
   chats: Chat[];
   settings: Settings | null;
+  presets: Preset[];
   activeChatId: number | null;
   showArchived: boolean;
   isSettingsOpen: boolean;
@@ -19,16 +20,60 @@ interface AppState {
   
   // Data actions
   refreshChats: () => Promise<void>;
+  refreshPresets: () => Promise<void>;
   createChat: (title: string) => Promise<number | null>;
   renameChat: (id: number, title: string) => Promise<void>;
   archiveChat: (id: number, archived: boolean) => Promise<void>;
   deleteChat: (id: number) => Promise<void>;
   updateSettings: (settings: Settings) => Promise<void>;
+
+  // Preset actions
+  createPreset: (name: string, modelUrl: string, modelName: string, customModelName: string | null, customizationPrompt: string) => Promise<number | null>;
+  updatePreset: (id: number, name: string, modelUrl: string, modelName: string, customModelName: string | null, customizationPrompt: string) => Promise<void>;
+  deletePreset: (id: number) => Promise<void>;
+  duplicatePreset: (id: number) => Promise<number | null>;
+  exportPresets: (presetIds?: number[]) => Promise<string | null>;
+  importPresets: (jsonContent: string) => Promise<number[] | null>;
+
+  // Chat preset actions
+  updateChatPreset: (chatId: number, presetId: number) => Promise<void>;
+  lockChatPreset: (chatId: number) => Promise<void>;
+}
+
+/** Apply the appearance theme (dark/light/system) to the document. */
+function applyTheme(theme: string) {
+  if (theme === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else if (theme === 'light') {
+    document.documentElement.classList.remove('dark');
+  } else {
+    // system
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }
+}
+
+/** Apply the accent theme class to the document. */
+function applyAccentTheme(accentTheme: string) {
+  // Remove any existing accent classes
+  const classes = document.documentElement.classList;
+  const toRemove: string[] = [];
+  classes.forEach(c => { if (c.startsWith('accent-')) toRemove.push(c); });
+  toRemove.forEach(c => classes.remove(c));
+
+  // Apply the new accent class (emerald is the default, no class needed)
+  if (accentTheme && accentTheme !== 'emerald') {
+    classes.add(`accent-${accentTheme}`);
+  }
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   chats: [],
   settings: null,
+  presets: [],
   activeChatId: null,
   showArchived: false,
   isSettingsOpen: false,
@@ -38,27 +83,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialize: async () => {
     try {
       set({ isLoading: true, error: null });
-      const [settings, chats] = await Promise.all([
+      const [settings, chats, presets] = await Promise.all([
         ipc.getSettings(),
         ipc.getChats(),
+        ipc.getPresets(),
       ]);
       
-      // Apply theme
-      if (settings.theme === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else if (settings.theme === 'light') {
-        document.documentElement.classList.remove('dark');
-      } else {
-        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-           document.documentElement.classList.add('dark');
-        } else {
-           document.documentElement.classList.remove('dark');
-        }
-      }
+      applyTheme(settings.theme);
+      applyAccentTheme(settings.accent_theme);
 
-      set({ settings, chats, isLoading: false });
-    } catch (err: any) {
-      set({ error: err.toString(), isLoading: false });
+      set({ settings, chats, presets, isLoading: false });
+    } catch (err: unknown) {
+      set({ error: String(err), isLoading: false });
     }
   },
 
@@ -72,6 +108,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ chats });
     } catch (error) {
       console.error("Failed to load chats", error);
+    }
+  },
+
+  refreshPresets: async () => {
+    try {
+      const presets = await ipc.getPresets();
+      set({ presets });
+    } catch (error) {
+      console.error("Failed to load presets", error);
     }
   },
 
@@ -123,23 +168,93 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: async (settings) => {
     try {
       await ipc.updateSettings(settings);
-      
-      // Re-apply theme
-      if (settings.theme === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else if (settings.theme === 'light') {
-        document.documentElement.classList.remove('dark');
-      } else {
-        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-           document.documentElement.classList.add('dark');
-        } else {
-           document.documentElement.classList.remove('dark');
-        }
-      }
-
+      applyTheme(settings.theme);
+      applyAccentTheme(settings.accent_theme);
       set({ settings });
-    } catch (err: any) {
-      set({ error: err.toString() });
+    } catch (err: unknown) {
+      set({ error: String(err) });
     }
-  }
+  },
+
+  // ── Preset actions ─────────────────────────────────────────────────
+
+  createPreset: async (name, modelUrl, modelName, customModelName, customizationPrompt) => {
+    try {
+      const id = await ipc.createPreset(name, modelUrl, modelName, customModelName, customizationPrompt);
+      await get().refreshPresets();
+      return id;
+    } catch (error) {
+      console.error("Failed to create preset", error);
+      return null;
+    }
+  },
+
+  updatePreset: async (id, name, modelUrl, modelName, customModelName, customizationPrompt) => {
+    try {
+      await ipc.updatePreset(id, name, modelUrl, modelName, customModelName, customizationPrompt);
+      await get().refreshPresets();
+    } catch (error) {
+      console.error("Failed to update preset", error);
+    }
+  },
+
+  deletePreset: async (id) => {
+    try {
+      await ipc.deletePreset(id);
+      await get().refreshPresets();
+    } catch (error) {
+      console.error("Failed to delete preset", error);
+    }
+  },
+
+  duplicatePreset: async (id) => {
+    try {
+      const newId = await ipc.duplicatePreset(id);
+      await get().refreshPresets();
+      return newId;
+    } catch (error) {
+      console.error("Failed to duplicate preset", error);
+      return null;
+    }
+  },
+
+  exportPresets: async (presetIds) => {
+    try {
+      return await ipc.exportPresets(presetIds);
+    } catch (error) {
+      console.error("Failed to export presets", error);
+      return null;
+    }
+  },
+
+  importPresets: async (jsonContent) => {
+    try {
+      const ids = await ipc.importPresets(jsonContent);
+      await get().refreshPresets();
+      return ids;
+    } catch (error) {
+      console.error("Failed to import presets", error);
+      return null;
+    }
+  },
+
+  // ── Chat preset actions ────────────────────────────────────────────
+
+  updateChatPreset: async (chatId, presetId) => {
+    try {
+      await ipc.updateChatPreset(chatId, presetId);
+      await get().refreshChats();
+    } catch (error) {
+      console.error("Failed to update chat preset", error);
+    }
+  },
+
+  lockChatPreset: async (chatId) => {
+    try {
+      await ipc.lockChatPreset(chatId);
+      await get().refreshChats();
+    } catch (error) {
+      console.error("Failed to lock chat preset", error);
+    }
+  },
 }));

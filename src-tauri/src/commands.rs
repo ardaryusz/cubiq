@@ -4,7 +4,7 @@ use tauri::State;
 use crate::models::{Chat, Message, Preset, Settings, PresetExportItem, PresetExportFile};
 
 /// Global Cubiq identity prompt, always prepended to every AI request.
-const CUBIQ_IDENTITY_PROMPT: &str = "You are Cubiq, the AI assistant inside the Cubiq desktop app. Identify yourself as Cubiq when asked who you are. Do not identify yourself as ChatGPT, Meta AI, Claude, Gemini, or any other assistant brand.";
+const CUBIQ_IDENTITY_PROMPT: &str = "You are Cubiq, the AI assistant inside the Cubiq desktop app. Identify yourself as Cubiq only when the user asks who you are. Do not identify yourself as ChatGPT, Meta AI, Claude, Gemini, or any other assistant brand. Do not mention your name in every response — only when directly asked.";
 
 pub struct AppState {
     pub db: Mutex<Connection>,
@@ -601,7 +601,8 @@ pub async fn send_chat_message(chat_id: i64, state: State<'_, AppState>) -> Resu
         conversation.push(("system".to_string(), customization_prompt));
     }
 
-    // Append message history
+    // Append message history — also capture the first user message for auto-title
+    let first_user_message: Option<String>;
     {
         let db = state.db.lock().unwrap();
         let mut stmt = db
@@ -612,9 +613,16 @@ pub async fn send_chat_message(chat_id: i64, state: State<'_, AppState>) -> Resu
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
             .map_err(|e| e.to_string())?;
+
+        let mut first_user = None;
         for row in rows {
-            conversation.push(row.map_err(|e| e.to_string())?);
+            let (role, content) = row.map_err(|e| e.to_string())?;
+            if role == "user" && first_user.is_none() {
+                first_user = Some(content.clone());
+            }
+            conversation.push((role, content));
         }
+        first_user_message = first_user;
     }
 
     // 4. Call the AI service
@@ -641,7 +649,100 @@ pub async fn send_chat_message(chat_id: i64, state: State<'_, AppState>) -> Resu
         .map_err(|e| e.to_string())?;
     }
 
+    // 6. Auto-title: generate a title after the first assistant reply
+    //    Only if user_edited_title is false and title is still "New Chat"
+    {
+        let should_auto_title = {
+            let db = state.db.lock().unwrap();
+            let (title, user_edited): (String, bool) = db.query_row(
+                "SELECT title, user_edited_title FROM chats WHERE id = ?1",
+                [&chat_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).unwrap_or(("".to_string(), true));
+            !user_edited && title == "New Chat"
+        };
+
+        if should_auto_title {
+            if let Some(ref user_msg) = first_user_message {
+                // Try AI-generated title first
+                let title = try_generate_ai_title(&api_key, &model_url, &model_name, user_msg).await
+                    .unwrap_or_else(|_| generate_fallback_title(user_msg));
+
+                let db = state.db.lock().unwrap();
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64;
+                // Update title but do NOT set user_edited_title (auto-title is not a user edit)
+                let _ = db.execute(
+                    "UPDATE chats SET title = ?1, updated_at = ?2 WHERE id = ?3 AND user_edited_title = 0",
+                    (&title, &now, &chat_id),
+                );
+            }
+        }
+    }
+
     Ok(reply)
+}
+
+/// Try to generate a title using the AI. Returns Err if anything goes wrong.
+async fn try_generate_ai_title(
+    api_key: &str,
+    model_url: &str,
+    model_name: &str,
+    user_message: &str,
+) -> Result<String, String> {
+    let title_messages = vec![
+        (
+            "system".to_string(),
+            "You are a title generator. Given a user message from a conversation, generate a concise 3-6 word title that summarizes the USER's topic or question. Focus on what the user is asking about, not how the assistant would reply. Reply with ONLY the title text. No quotes. No punctuation at the end. Do not include greetings or pleasantries in the title.".to_string(),
+        ),
+        ("user".to_string(), format!("Summarize this user message as a short title: {}", user_message)),
+    ];
+
+    let raw_title = crate::ai::chat_completion(api_key, model_url, model_name, title_messages)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let title = raw_title.trim().trim_matches('"').trim().to_string();
+
+    // Validate: non-empty and not absurdly long
+    if title.is_empty() || title.len() > 80 {
+        return Err("Invalid AI-generated title".to_string());
+    }
+
+    Ok(title)
+}
+
+/// Local fallback: derive a short title from the first user message.
+fn generate_fallback_title(user_message: &str) -> String {
+    let trimmed = user_message.trim();
+    if trimmed.is_empty() {
+        return "Chat".to_string();
+    }
+
+    // Take the first ~6 words
+    let words: Vec<&str> = trimmed.split_whitespace().take(6).collect();
+    let mut title = words.join(" ");
+
+    // Cap at 50 characters
+    if title.len() > 50 {
+        // Find the last space before 50 chars to avoid cutting mid-word
+        if let Some(pos) = title[..50].rfind(' ') {
+            title.truncate(pos);
+        } else {
+            title.truncate(50);
+        }
+        title.push('…');
+    }
+
+    // Strip trailing punctuation (except ellipsis we just added)
+    let stripped = title.trim_end_matches(|c: char| {
+        c == '.' || c == ',' || c == '!' || c == '?' || c == ';' || c == ':'
+    });
+
+    let result = stripped.to_string();
+    if result.is_empty() { "Chat".to_string() } else { result }
 }
 
 #[tauri::command]

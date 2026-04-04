@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAppStore } from '../../store';
 import type { Message } from '../../types';
 import * as ipc from '../../lib/ipc';
-import { SendHorizonal, Trash2, Edit2, Archive, AlertCircle } from 'lucide-react';
+import { SendHorizonal, Trash2, Edit2, Archive, AlertCircle, Lock, ChevronDown } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import styles from './ChatArea.module.css';
 
@@ -18,9 +18,13 @@ function formatTimestamp(ms: number): string {
 export default function ChatArea() {
   const activeChatId = useAppStore(state => state.activeChatId);
   const chats = useAppStore(state => state.chats);
+  const presets = useAppStore(state => state.presets);
   const renameChat = useAppStore(state => state.renameChat);
   const archiveChat = useAppStore(state => state.archiveChat);
   const deleteChat = useAppStore(state => state.deleteChat);
+  const refreshChats = useAppStore(state => state.refreshChats);
+  const updateChatPreset = useAppStore(state => state.updateChatPreset);
+  const lockChatPreset = useAppStore(state => state.lockChatPreset);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -30,6 +34,7 @@ export default function ChatArea() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleSrc, setEditTitleSrc] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Track which chat we're loading for, to discard stale results if user
   // switches chats rapidly while a fetch is in-flight.
@@ -98,6 +103,11 @@ export default function ChatArea() {
     setIsSending(true);
 
     try {
+      // 0. Lock the preset on first send (if not already locked)
+      if (activeChat && !activeChat.preset_locked) {
+        await lockChatPreset(currentChatId);
+      }
+
       // 1. Save the user message to DB
       await ipc.addMessage(currentChatId, 'user', content);
 
@@ -115,6 +125,9 @@ export default function ChatArea() {
       if (loadingForChatRef.current === currentChatId) {
         setMessages(msgsAfterAi);
       }
+
+      // 5. Refresh chat list to pick up auto-generated title
+      await refreshChats();
     } catch (e) {
       setSendError(`${String(e)}`);
       // Still reload so any successfully saved messages are visible
@@ -128,6 +141,8 @@ export default function ChatArea() {
       }
     } finally {
       setIsSending(false);
+      // Restore focus to the composer after send completes
+      setTimeout(() => textareaRef.current?.focus(), 0);
     }
   };
 
@@ -141,19 +156,48 @@ export default function ChatArea() {
   return (
     <div className={styles.chatArea}>
       <header className={styles.header}>
-        <div className={styles.title}>
-          {isEditingTitle ? (
-            <input
-              autoFocus
-              value={editTitleSrc}
-              onChange={e => setEditTitleSrc(e.target.value)}
-              onBlur={saveTitle}
-              onKeyDown={e => e.key === 'Enter' && saveTitle()}
-              style={{ background: 'transparent', border: '1px solid var(--border-color)', outline: 'none', color: 'inherit', padding: '2px 5px', borderRadius: '4px' }}
-            />
-          ) : (
-            <span>{activeChat.title}</span>
-          )}
+        <div className={styles.headerLeft}>
+          <div className={styles.title}>
+            {isEditingTitle ? (
+              <input
+                autoFocus
+                value={editTitleSrc}
+                onChange={e => setEditTitleSrc(e.target.value)}
+                onBlur={saveTitle}
+                onKeyDown={e => e.key === 'Enter' && saveTitle()}
+                style={{ background: 'transparent', border: '1px solid var(--border-color)', outline: 'none', color: 'inherit', padding: '2px 5px', borderRadius: '4px' }}
+              />
+            ) : (
+              <span>{activeChat.title}</span>
+            )}
+          </div>
+          <div className={styles.presetBadge}>
+            {activeChat.preset_locked ? (
+              <span className={styles.presetLocked} title="Preset is locked for this chat">
+                <Lock size={12} />
+                {activeChat.preset_name_snapshot || 'Default'}
+              </span>
+            ) : (
+              <div className={styles.presetSelector}>
+                <select
+                  className={styles.presetSelect}
+                  value={activeChat.preset_id ?? ''}
+                  onChange={async (e) => {
+                    const presetId = Number(e.target.value);
+                    if (presetId && activeChatId) {
+                      await updateChatPreset(activeChatId, presetId);
+                    }
+                  }}
+                  title="Select preset (locks after first message)"
+                >
+                  {presets.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={12} className={styles.presetSelectIcon} />
+              </div>
+            )}
+          </div>
         </div>
         <div className={styles.headerActions}>
           <button
@@ -232,6 +276,7 @@ export default function ChatArea() {
       <div className={styles.composer}>
         <div className={styles.composerInner}>
           <textarea
+            ref={textareaRef}
             className={styles.composerInput}
             value={input}
             onChange={e => setInput(e.target.value)}

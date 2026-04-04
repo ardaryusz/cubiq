@@ -12,8 +12,9 @@
   background-color: var(--bg-header);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  width: 500px;
-  max-width: 90vw;
+  width: 560px;
+  max-width: 92vw;
+  max-height: 85vh;
   box-shadow: var(--shadow-modal);
   overflow: hidden;
   display: flex;
@@ -26,6 +27,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 .header h2 {
   font-size: 1.2rem;
@@ -44,9 +46,22 @@
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
+  overflow-y: auto;
+  flex: 1;
 }
 
+/* ── Section headers ─── */
+.sectionTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: -8px;
+}
+
+/* ── Fields ─── */
 .field {
   display: flex;
   flex-direction: column;
@@ -75,7 +90,6 @@
   display: flex;
   align-items: center;
 }
-
 .inputWithToggle {
   width: 100%;
   padding: 10px;
@@ -106,14 +120,195 @@
   color: var(--text-main);
 }
 
+/* ── Accent theme picker ─── */
+.accentRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.accentDot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.accentDot:hover {
+  transform: scale(1.15);
+}
+.accentDotActive {
+  border-color: var(--text-main);
+  transform: scale(1.1);
+}
+
+/* ── Preset Manager ─── */
+.presetList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.presetItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+}
+.presetItem:hover {
+  background: rgba(0,0,0,0.03);
+}
+html.dark .presetItem:hover {
+  background: rgba(255,255,255,0.04);
+}
+.presetName {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.presetBadge {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.06);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+html.dark .presetBadge {
+  background: rgba(255,255,255,0.08);
+}
+.presetActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.presetActionBtn {
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+}
+.presetActionBtn:hover {
+  color: var(--text-main);
+  background: rgba(0,0,0,0.06);
+}
+html.dark .presetActionBtn:hover {
+  background: rgba(255,255,255,0.08);
+}
+.presetActionBtnDanger:hover {
+  color: #ef4444;
+}
+
+.presetToolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.toolbarBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  color: var(--text-main);
+  background: var(--bg-color);
+}
+.toolbarBtn:hover {
+  background: rgba(0,0,0,0.03);
+}
+html.dark .toolbarBtn:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+/* ── Preset Editor ─── */
+.editorOverlay {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.editorBackBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--accent-color);
+  cursor: pointer;
+  width: fit-content;
+}
+.editorBackBtn:hover {
+  text-decoration: underline;
+}
+.editorTextarea {
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-color);
+  color: var(--text-main);
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+  min-height: 80px;
+}
+.editorTextarea:focus {
+  border-color: var(--accent-color);
+}
+.editorActions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.editorSaveBtn {
+  background-color: var(--accent-color);
+  color: white;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+.editorSaveBtn:hover {
+  background-color: var(--accent-hover);
+}
+.editorCancelBtn {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  font-size: 0.9rem;
+  color: var(--text-main);
+  background: var(--bg-color);
+}
+.editorCancelBtn:hover {
+  background: rgba(0,0,0,0.03);
+}
+html.dark .editorCancelBtn:hover {
+  background: rgba(255,255,255,0.05);
+}
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+.checkboxRow input[type="checkbox"] {
+  accent-color: var(--accent-color);
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Footer ─── */
 .footer {
   padding: 15px 20px;
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
   background-color: var(--bg-color);
+  flex-shrink: 0;
 }
-
 .saveBtn {
   background-color: var(--accent-color);
   color: white;
@@ -125,12 +320,12 @@
   background-color: var(--accent-hover);
 }
 
+/* ── Test Connection ─── */
 .testRow {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-
 .testBtn {
   display: flex;
   align-items: center;
@@ -144,47 +339,22 @@
   width: fit-content;
   transition: background-color 0.15s;
 }
-.testBtn:hover {
-  background-color: rgba(0, 0, 0, 0.03);
-}
-html.dark .testBtn:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-}
-.testBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
+.testBtn:hover { background-color: rgba(0,0,0,0.03); }
+html.dark .testBtn:hover { background-color: rgba(255,255,255,0.05); }
+.testBtn:disabled { opacity: 0.6; cursor: not-allowed; }
 .testSuccess {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  color: var(--accent-color);
-  font-size: 0.85rem;
-  line-height: 1.4;
+  display: flex; align-items: flex-start; gap: 6px;
+  color: var(--accent-color); font-size: 0.85rem; line-height: 1.4;
 }
-.testSuccess svg {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
+.testSuccess svg { flex-shrink: 0; margin-top: 2px; }
 .testError {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  color: #ef4444;
-  font-size: 0.85rem;
-  line-height: 1.4;
+  display: flex; align-items: flex-start; gap: 6px;
+  color: #ef4444; font-size: 0.85rem; line-height: 1.4;
 }
-.testError svg {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
+.testError svg { flex-shrink: 0; margin-top: 2px; }
 
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-.spin {
-  animation: spin 1s linear infinite;
-}
+.spin { animation: spin 1s linear infinite; }

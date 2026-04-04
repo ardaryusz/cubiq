@@ -1,9 +1,28 @@
+export interface Preset {
+  id?: number;
+  name: string;
+  model_url: string;
+  model_name: string;
+  custom_model_name?: string;
+  customization_prompt: string;
+  is_builtin: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface Chat {
   id?: number;
   title: string;
   created_at: number;
   updated_at: number;
   archived: boolean;
+  preset_id?: number;
+  preset_name_snapshot?: string;
+  model_url_snapshot?: string;
+  model_name_snapshot?: string;
+  customization_snapshot?: string;
+  preset_locked: boolean;
+  user_edited_title: boolean;
 }
 
 export interface Message {
@@ -16,7 +35,23 @@ export interface Message {
 
 export interface Settings {
   theme: 'light' | 'dark' | 'system';
+  accent_theme: string;
   api_key: string;
   model_url: string;
   model_name: string;
+  selected_preset_id?: number;
+}
+
+export interface PresetExportItem {
+  name: string;
+  model_url: string;
+  model_name: string;
+  custom_model_name?: string;
+  customization_prompt: string;
+}
+
+export interface PresetExportFile {
+  cubiq_presets_version: number;
+  exported_at: string;
+  presets: PresetExportItem[];
 }

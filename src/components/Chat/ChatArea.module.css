@@ -7,24 +7,86 @@
 }
 
 .header {
-  height: 60px;
+  min-height: 60px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 8px 20px;
   background-color: var(--bg-header);
   flex-shrink: 0;
+  gap: 12px;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
 }
 
 .title {
   font-weight: 600;
   font-size: 1.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.presetBadge {
+  display: flex;
+  align-items: center;
+}
+
+.presetLocked {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 2px 8px 2px 6px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.04);
+}
+html.dark .presetLocked {
+  background: rgba(255,255,255,0.06);
+}
+
+.presetSelector {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.presetSelect {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 2px 22px 2px 8px;
+  font-size: 0.75rem;
+  color: var(--accent-color);
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+}
+.presetSelect:focus {
+  border-color: var(--accent-color);
+}
+
+.presetSelectIcon {
+  position: absolute;
+  right: 6px;
+  pointer-events: none;
+  color: var(--accent-color);
 }
 
 .headerActions {
   display: flex;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .iconBtn {
