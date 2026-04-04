@@ -1,26 +1,36 @@
 use rusqlite::Connection;
 use std::sync::Mutex;
 use tauri::State;
-use crate::models::{Chat, Message, Settings};
+use crate::models::{Chat, Message, Preset, Settings, PresetExportItem, PresetExportFile};
+
+/// Global Cubiq identity prompt, always prepended to every AI request.
+const CUBIQ_IDENTITY_PROMPT: &str = "You are Cubiq, the AI assistant inside the Cubiq desktop app. Identify yourself as Cubiq when asked who you are. Do not identify yourself as ChatGPT, Meta AI, Claude, Gemini, or any other assistant brand.";
 
 pub struct AppState {
     pub db: Mutex<Connection>,
 }
 
+// ── Settings ─────────────────────────────────────────────────────────
+
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
     let db = state.db.lock().unwrap();
-    let mut stmt = db.prepare("SELECT theme, api_key, model_url, model_name FROM settings WHERE id = 1").map_err(|e| e.to_string())?;
-    
+    let mut stmt = db.prepare(
+        "SELECT theme, accent_theme, api_key, model_url, model_name, selected_preset_id
+         FROM settings WHERE id = 1"
+    ).map_err(|e| e.to_string())?;
+
     let settings = stmt.query_row((), |row| {
         Ok(Settings {
             theme: row.get(0)?,
-            api_key: row.get(1)?,
-            model_url: row.get(2)?,
-            model_name: row.get(3)?,
+            accent_theme: row.get(1)?,
+            api_key: row.get(2)?,
+            model_url: row.get(3)?,
+            model_name: row.get(4)?,
+            selected_preset_id: row.get(5)?,
         })
     }).map_err(|e| e.to_string())?;
-    
+
     Ok(settings)
 }
 
@@ -28,17 +38,379 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
 pub fn update_settings(settings: Settings, state: State<'_, AppState>) -> Result<(), String> {
     let db = state.db.lock().unwrap();
     db.execute(
-        "UPDATE settings SET theme = ?1, api_key = ?2, model_url = ?3, model_name = ?4 WHERE id = 1",
-        (&settings.theme, &settings.api_key, &settings.model_url, &settings.model_name),
+        "UPDATE settings SET theme = ?1, accent_theme = ?2, api_key = ?3, model_url = ?4, model_name = ?5, selected_preset_id = ?6 WHERE id = 1",
+        (&settings.theme, &settings.accent_theme, &settings.api_key, &settings.model_url, &settings.model_name, &settings.selected_preset_id),
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
+// ── Presets ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_presets(state: State<'_, AppState>) -> Result<Vec<Preset>, String> {
+    let db = state.db.lock().unwrap();
+    let mut stmt = db.prepare(
+        "SELECT id, name, model_url, model_name, custom_model_name, customization_prompt, is_builtin, created_at, updated_at
+         FROM presets ORDER BY is_builtin DESC, name ASC"
+    ).map_err(|e| e.to_string())?;
+
+    let iter = stmt.query_map((), |row| {
+        Ok(Preset {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            model_url: row.get(2)?,
+            model_name: row.get(3)?,
+            custom_model_name: row.get(4)?,
+            customization_prompt: row.get(5)?,
+            is_builtin: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut presets = Vec::new();
+    for p in iter {
+        presets.push(p.map_err(|e| e.to_string())?);
+    }
+    Ok(presets)
+}
+
+#[tauri::command]
+pub fn create_preset(
+    name: String,
+    model_url: String,
+    model_name: String,
+    custom_model_name: Option<String>,
+    customization_prompt: String,
+    state: State<'_, AppState>,
+) -> Result<i64, String> {
+    let db = state.db.lock().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+
+    db.execute(
+        "INSERT INTO presets (name, model_url, model_name, custom_model_name, customization_prompt, is_builtin, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7)",
+        rusqlite::params![name, model_url, model_name, custom_model_name, customization_prompt, now, now],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(db.last_insert_rowid())
+}
+
+#[tauri::command]
+pub fn update_preset(
+    id: i64,
+    name: String,
+    model_url: String,
+    model_name: String,
+    custom_model_name: Option<String>,
+    customization_prompt: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+
+    // Prevent editing built-in presets
+    let is_builtin: bool = db.query_row(
+        "SELECT is_builtin FROM presets WHERE id = ?1",
+        [&id],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    if is_builtin {
+        return Err("Cannot edit a built-in preset.".to_string());
+    }
+
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    db.execute(
+        "UPDATE presets SET name = ?1, model_url = ?2, model_name = ?3, custom_model_name = ?4, customization_prompt = ?5, updated_at = ?6 WHERE id = ?7",
+        rusqlite::params![name, model_url, model_name, custom_model_name, customization_prompt, now, id],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_preset(id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+
+    // Prevent deleting built-in presets
+    let is_builtin: bool = db.query_row(
+        "SELECT is_builtin FROM presets WHERE id = ?1",
+        [&id],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    if is_builtin {
+        return Err("Cannot delete a built-in preset.".to_string());
+    }
+
+    db.execute("DELETE FROM presets WHERE id = ?1", [&id]).map_err(|e| e.to_string())?;
+
+    // If this was the selected default preset, clear the selection
+    db.execute(
+        "UPDATE settings SET selected_preset_id = NULL WHERE selected_preset_id = ?1",
+        [&id],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn duplicate_preset(id: i64, state: State<'_, AppState>) -> Result<i64, String> {
+    let db = state.db.lock().unwrap();
+
+    // Read the source preset
+    let (name, model_url, model_name, custom_model_name, customization_prompt): (String, String, String, Option<String>, String) = db.query_row(
+        "SELECT name, model_url, model_name, custom_model_name, customization_prompt FROM presets WHERE id = ?1",
+        [&id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+    ).map_err(|e| e.to_string())?;
+
+    let new_name = format!("{} (copy)", name);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+
+    db.execute(
+        "INSERT INTO presets (name, model_url, model_name, custom_model_name, customization_prompt, is_builtin, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7)",
+        rusqlite::params![new_name, model_url, model_name, custom_model_name, customization_prompt, now, now],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(db.last_insert_rowid())
+}
+
+// ── Preset Import/Export ─────────────────────────────────────────────
+
+#[tauri::command]
+pub fn export_presets(preset_ids: Option<Vec<i64>>, state: State<'_, AppState>) -> Result<String, String> {
+    let db = state.db.lock().unwrap();
+
+    let presets: Vec<PresetExportItem> = if let Some(ids) = preset_ids {
+        // Export specific presets
+        let mut items = Vec::new();
+        for id in ids {
+            let item = db.query_row(
+                "SELECT name, model_url, model_name, custom_model_name, customization_prompt FROM presets WHERE id = ?1",
+                [&id],
+                |row| Ok(PresetExportItem {
+                    name: row.get(0)?,
+                    model_url: row.get(1)?,
+                    model_name: row.get(2)?,
+                    custom_model_name: row.get(3)?,
+                    customization_prompt: row.get(4)?,
+                }),
+            ).map_err(|e| e.to_string())?;
+            items.push(item);
+        }
+        items
+    } else {
+        // Export all user (non-builtin) presets
+        let mut stmt = db.prepare(
+            "SELECT name, model_url, model_name, custom_model_name, customization_prompt FROM presets WHERE is_builtin = 0 ORDER BY name ASC"
+        ).map_err(|e| e.to_string())?;
+
+        let iter = stmt.query_map((), |row| {
+            Ok(PresetExportItem {
+                name: row.get(0)?,
+                model_url: row.get(1)?,
+                model_name: row.get(2)?,
+                custom_model_name: row.get(3)?,
+                customization_prompt: row.get(4)?,
+            })
+        }).map_err(|e| e.to_string())?;
+
+        let mut items = Vec::new();
+        for item in iter {
+            items.push(item.map_err(|e| e.to_string())?);
+        }
+        items
+    };
+
+    let export_file = PresetExportFile {
+        cubiq_presets_version: 1,
+        exported_at: chrono_now_iso(),
+        presets,
+    };
+
+    serde_json::to_string_pretty(&export_file).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn import_presets(json_content: String, state: State<'_, AppState>) -> Result<Vec<i64>, String> {
+    let export_file: PresetExportFile = serde_json::from_str(&json_content)
+        .map_err(|e| format!("Invalid preset file format: {}", e))?;
+
+    if export_file.cubiq_presets_version != 1 {
+        return Err(format!(
+            "Unsupported preset file version: {}. Expected version 1.",
+            export_file.cubiq_presets_version
+        ));
+    }
+
+    let db = state.db.lock().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+
+    let mut imported_ids = Vec::new();
+
+    for item in &export_file.presets {
+        // Check for name conflicts and deduplicate
+        let final_name = deduplicate_preset_name(&db, &item.name)?;
+
+        db.execute(
+            "INSERT INTO presets (name, model_url, model_name, custom_model_name, customization_prompt, is_builtin, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7)",
+            rusqlite::params![final_name, item.model_url, item.model_name, item.custom_model_name, item.customization_prompt, now, now],
+        ).map_err(|e| e.to_string())?;
+
+        imported_ids.push(db.last_insert_rowid());
+    }
+
+    Ok(imported_ids)
+}
+
+/// If a preset name already exists, append " (imported)", " (imported 2)", etc.
+fn deduplicate_preset_name(db: &Connection, base_name: &str) -> Result<String, String> {
+    let exists: bool = db.query_row(
+        "SELECT COUNT(*) > 0 FROM presets WHERE name = ?1",
+        [base_name],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    if !exists {
+        return Ok(base_name.to_string());
+    }
+
+    // Try " (imported)", then " (imported 2)", " (imported 3)", ...
+    let candidate = format!("{} (imported)", base_name);
+    let exists: bool = db.query_row(
+        "SELECT COUNT(*) > 0 FROM presets WHERE name = ?1",
+        [&candidate],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    if !exists {
+        return Ok(candidate);
+    }
+
+    for i in 2..100 {
+        let candidate = format!("{} (imported {})", base_name, i);
+        let exists: bool = db.query_row(
+            "SELECT COUNT(*) > 0 FROM presets WHERE name = ?1",
+            [&candidate],
+            |row| row.get(0),
+        ).map_err(|e| e.to_string())?;
+
+        if !exists {
+            return Ok(candidate);
+        }
+    }
+
+    Err("Too many presets with the same name.".to_string())
+}
+
+/// Simple ISO-8601 timestamp without pulling in the chrono crate.
+fn chrono_now_iso() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    // Approximate UTC — good enough for export metadata
+    let secs_per_day = 86400u64;
+    let days = now / secs_per_day;
+    let day_secs = now % secs_per_day;
+    let hours = day_secs / 3600;
+    let mins = (day_secs % 3600) / 60;
+    let secs = day_secs % 60;
+
+    // Days since epoch to Y-M-D (simplified)
+    let mut y = 1970i32;
+    let mut remaining = days as i64;
+    loop {
+        let days_in_year = if is_leap(y) { 366 } else { 365 };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        y += 1;
+    }
+    let months_days: [i64; 12] = if is_leap(y) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    let mut m = 1u32;
+    for &md in &months_days {
+        if remaining < md {
+            break;
+        }
+        remaining -= md;
+        m += 1;
+    }
+    let d = remaining + 1;
+
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, hours, mins, secs)
+}
+
+fn is_leap(y: i32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+// ── Chat Preset Management ──────────────────────────────────────────
+
+#[tauri::command]
+pub fn update_chat_preset(chat_id: i64, preset_id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+
+    // Check that the chat is not locked
+    let locked: bool = db.query_row(
+        "SELECT preset_locked FROM chats WHERE id = ?1",
+        [&chat_id],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    if locked {
+        return Err("Cannot change preset: this chat's preset is locked after the first message was sent.".to_string());
+    }
+
+    // Read the preset data for snapshot
+    let (name, model_url, model_name, customization_prompt): (String, String, String, String) = db.query_row(
+        "SELECT name, model_url, model_name, customization_prompt FROM presets WHERE id = ?1",
+        [&preset_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+    ).map_err(|e| format!("Preset not found: {}", e))?;
+
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+
+    db.execute(
+        "UPDATE chats SET preset_id = ?1, preset_name_snapshot = ?2, model_url_snapshot = ?3, model_name_snapshot = ?4, customization_snapshot = ?5, updated_at = ?6 WHERE id = ?7",
+        rusqlite::params![preset_id, name, model_url, model_name, customization_prompt, now, chat_id],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn lock_chat_preset(chat_id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+
+    db.execute(
+        "UPDATE chats SET preset_locked = 1 WHERE id = ?1",
+        [&chat_id],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+// ── Chats ────────────────────────────────────────────────────────────
+
 #[tauri::command]
 pub fn get_chats(state: State<'_, AppState>) -> Result<Vec<Chat>, String> {
     let db = state.db.lock().unwrap();
-    let mut stmt = db.prepare("SELECT id, title, created_at, updated_at, archived FROM chats ORDER BY updated_at DESC").map_err(|e| e.to_string())?;
-    
+    let mut stmt = db.prepare(
+        "SELECT id, title, created_at, updated_at, archived,
+                preset_id, preset_name_snapshot, model_url_snapshot, model_name_snapshot,
+                customization_snapshot, preset_locked, user_edited_title
+         FROM chats ORDER BY updated_at DESC"
+    ).map_err(|e| e.to_string())?;
+
     let chat_iter = stmt.query_map((), |row| {
         Ok(Chat {
             id: row.get(0)?,
@@ -46,6 +418,13 @@ pub fn get_chats(state: State<'_, AppState>) -> Result<Vec<Chat>, String> {
             created_at: row.get(2)?,
             updated_at: row.get(3)?,
             archived: row.get(4)?,
+            preset_id: row.get(5)?,
+            preset_name_snapshot: row.get(6)?,
+            model_url_snapshot: row.get(7)?,
+            model_name_snapshot: row.get(8)?,
+            customization_snapshot: row.get(9)?,
+            preset_locked: row.get(10)?,
+            user_edited_title: row.get(11)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -53,7 +432,7 @@ pub fn get_chats(state: State<'_, AppState>) -> Result<Vec<Chat>, String> {
     for chat in chat_iter {
         chats.push(chat.map_err(|e| e.to_string())?);
     }
-    
+
     Ok(chats)
 }
 
@@ -61,12 +440,37 @@ pub fn get_chats(state: State<'_, AppState>) -> Result<Vec<Chat>, String> {
 pub fn create_chat(title: String, state: State<'_, AppState>) -> Result<i64, String> {
     let db = state.db.lock().unwrap();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
-    
+
+    // Read selected_preset_id from settings to populate snapshot
+    let preset_data: Option<(i64, String, String, String, String)> = {
+        let selected_id: Option<i64> = db.query_row(
+            "SELECT selected_preset_id FROM settings WHERE id = 1",
+            (),
+            |row| row.get(0),
+        ).map_err(|e| e.to_string())?;
+
+        if let Some(pid) = selected_id {
+            db.query_row(
+                "SELECT id, name, model_url, model_name, customization_prompt FROM presets WHERE id = ?1",
+                [&pid],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            ).ok()
+        } else {
+            None
+        }
+    };
+
+    let (preset_id, preset_name, model_url, model_name, customization) = match preset_data {
+        Some((pid, name, url, model, cust)) => (Some(pid), Some(name), Some(url), Some(model), Some(cust)),
+        None => (None, None, None, None, None),
+    };
+
     db.execute(
-        "INSERT INTO chats (title, created_at, updated_at, archived) VALUES (?1, ?2, ?3, 0)",
-        (&title, &now, &now),
+        "INSERT INTO chats (title, created_at, updated_at, archived, preset_id, preset_name_snapshot, model_url_snapshot, model_name_snapshot, customization_snapshot, preset_locked, user_edited_title)
+         VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, 0, 0)",
+        rusqlite::params![title, now, now, preset_id, preset_name, model_url, model_name, customization],
     ).map_err(|e| e.to_string())?;
-    
+
     Ok(db.last_insert_rowid())
 }
 
@@ -75,7 +479,7 @@ pub fn rename_chat(id: i64, title: String, state: State<'_, AppState>) -> Result
     let db = state.db.lock().unwrap();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
     db.execute(
-        "UPDATE chats SET title = ?1, updated_at = ?2 WHERE id = ?3",
+        "UPDATE chats SET title = ?1, updated_at = ?2, user_edited_title = 1 WHERE id = ?3",
         (&title, &now, &id),
     ).map_err(|e| e.to_string())?;
     Ok(())
@@ -99,11 +503,15 @@ pub fn delete_chat(id: i64, state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// ── Messages ─────────────────────────────────────────────────────────
+
 #[tauri::command]
 pub fn get_messages(chat_id: i64, state: State<'_, AppState>) -> Result<Vec<Message>, String> {
     let db = state.db.lock().unwrap();
-    let mut stmt = db.prepare("SELECT id, chat_id, role, content, created_at FROM messages WHERE chat_id = ?1 ORDER BY created_at ASC").map_err(|e| e.to_string())?;
-    
+    let mut stmt = db.prepare(
+        "SELECT id, chat_id, role, content, created_at FROM messages WHERE chat_id = ?1 ORDER BY created_at ASC"
+    ).map_err(|e| e.to_string())?;
+
     let msg_iter = stmt.query_map([&chat_id], |row| {
         Ok(Message {
             id: row.get(0)?,
@@ -118,7 +526,7 @@ pub fn get_messages(chat_id: i64, state: State<'_, AppState>) -> Result<Vec<Mess
     for msg in msg_iter {
         messages.push(msg.map_err(|e| e.to_string())?);
     }
-    
+
     Ok(messages)
 }
 
@@ -126,13 +534,12 @@ pub fn get_messages(chat_id: i64, state: State<'_, AppState>) -> Result<Vec<Mess
 pub fn add_message(chat_id: i64, role: String, content: String, state: State<'_, AppState>) -> Result<i64, String> {
     let db = state.db.lock().unwrap();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
-    
+
     db.execute(
         "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4)",
         (&chat_id, &role, &content, &now),
     ).map_err(|e| e.to_string())?;
-    
-    // Update chat last updated
+
     db.execute(
         "UPDATE chats SET updated_at = ?1 WHERE id = ?2",
         (&now, &chat_id),
@@ -141,26 +548,61 @@ pub fn add_message(chat_id: i64, role: String, content: String, state: State<'_,
     Ok(db.last_insert_rowid())
 }
 
+// ── AI Chat ──────────────────────────────────────────────────────────
+
 #[tauri::command]
 pub async fn send_chat_message(chat_id: i64, state: State<'_, AppState>) -> Result<String, String> {
-    // 1. Read settings (api key, model url, model name)
-    let (api_key, model_url, model_name) = {
+    // 1. Read API key from settings (always global)
+    let api_key: String = {
         let db = state.db.lock().unwrap();
-        let mut stmt = db
-            .prepare("SELECT api_key, model_url, model_name FROM settings WHERE id = 1")
-            .map_err(|e| e.to_string())?;
-        stmt.query_row((), |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })
-        .map_err(|e| e.to_string())?
+        db.query_row(
+            "SELECT api_key FROM settings WHERE id = 1",
+            (),
+            |row| row.get(0),
+        ).map_err(|e| e.to_string())?
     };
 
-    // 2. Build conversation history from all messages in this chat
-    let conversation: Vec<(String, String)> = {
+    // 2. Read chat snapshot values (model_url, model_name, customization)
+    //    Fall back to settings if snapshots are NULL (legacy safety net)
+    let (model_url, model_name, customization_prompt): (String, String, String) = {
+        let db = state.db.lock().unwrap();
+
+        let (snap_url, snap_model, snap_cust): (Option<String>, Option<String>, Option<String>) = db.query_row(
+            "SELECT model_url_snapshot, model_name_snapshot, customization_snapshot FROM chats WHERE id = ?1",
+            [&chat_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|e| e.to_string())?;
+
+        // Fall back to settings if snapshots are missing
+        if snap_url.is_some() && snap_model.is_some() {
+            (
+                snap_url.unwrap(),
+                snap_model.unwrap(),
+                snap_cust.unwrap_or_default(),
+            )
+        } else {
+            let (url, model): (String, String) = db.query_row(
+                "SELECT model_url, model_name FROM settings WHERE id = 1",
+                (),
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).map_err(|e| e.to_string())?;
+            (url, model, String::new())
+        }
+    };
+
+    // 3. Build conversation with identity + customization prompts prepended
+    let mut conversation: Vec<(String, String)> = Vec::new();
+
+    // Always prepend global Cubiq identity prompt
+    conversation.push(("system".to_string(), CUBIQ_IDENTITY_PROMPT.to_string()));
+
+    // Prepend preset customization prompt if non-empty
+    if !customization_prompt.is_empty() {
+        conversation.push(("system".to_string(), customization_prompt));
+    }
+
+    // Append message history
+    {
         let db = state.db.lock().unwrap();
         let mut stmt = db
             .prepare("SELECT role, content FROM messages WHERE chat_id = ?1 ORDER BY created_at ASC")
@@ -170,19 +612,17 @@ pub async fn send_chat_message(chat_id: i64, state: State<'_, AppState>) -> Resu
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
             .map_err(|e| e.to_string())?;
-        let mut msgs = Vec::new();
         for row in rows {
-            msgs.push(row.map_err(|e| e.to_string())?);
+            conversation.push(row.map_err(|e| e.to_string())?);
         }
-        msgs
-    };
+    }
 
-    // 3. Call the AI service
+    // 4. Call the AI service
     let reply = crate::ai::chat_completion(&api_key, &model_url, &model_name, conversation)
         .await
         .map_err(|e| e.to_string())?;
 
-    // 4. Persist the assistant reply
+    // 5. Persist the assistant reply
     {
         let db = state.db.lock().unwrap();
         let now = std::time::SystemTime::now()
@@ -210,7 +650,6 @@ pub async fn test_connection(
     model_url: String,
     model_name: String,
 ) -> Result<String, String> {
-    // Send a minimal chat completion to validate the connection
     let test_messages = vec![
         ("user".to_string(), "Say hello in one word.".to_string()),
     ];

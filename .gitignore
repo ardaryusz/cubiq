@@ -7,16 +7,32 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Node / frontend build
 node_modules
 dist
 dist-ssr
 *.local
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Tauri / Rust build output
+src-tauri/target/
+target/
+
+# Local databases / app data
+*.db
+*.db-shm
+*.db-wal
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
