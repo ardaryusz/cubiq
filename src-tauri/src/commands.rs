@@ -16,11 +16,13 @@ pub struct AppState {
 pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
     let db = state.db.lock().unwrap();
     let mut stmt = db.prepare(
-        "SELECT theme, accent_theme, api_key, model_url, model_name, selected_preset_id
+        "SELECT theme, accent_theme, api_key, model_url, model_name, selected_preset_id, app_theme
          FROM settings WHERE id = 1"
     ).map_err(|e| e.to_string())?;
 
     let settings = stmt.query_row((), |row| {
+        // Handle migration case where app_theme might not be fully populated if read differently
+        let app_theme: Result<String, _> = row.get(6);
         Ok(Settings {
             theme: row.get(0)?,
             accent_theme: row.get(1)?,
@@ -28,6 +30,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
             model_url: row.get(3)?,
             model_name: row.get(4)?,
             selected_preset_id: row.get(5)?,
+            app_theme: app_theme.unwrap_or_else(|_| "cubiq-dark".to_string()),
         })
     }).map_err(|e| e.to_string())?;
 
@@ -38,8 +41,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
 pub fn update_settings(settings: Settings, state: State<'_, AppState>) -> Result<(), String> {
     let db = state.db.lock().unwrap();
     db.execute(
-        "UPDATE settings SET theme = ?1, accent_theme = ?2, api_key = ?3, model_url = ?4, model_name = ?5, selected_preset_id = ?6 WHERE id = 1",
-        (&settings.theme, &settings.accent_theme, &settings.api_key, &settings.model_url, &settings.model_name, &settings.selected_preset_id),
+        "UPDATE settings SET theme = ?1, accent_theme = ?2, api_key = ?3, model_url = ?4, model_name = ?5, selected_preset_id = ?6, app_theme = ?7 WHERE id = 1",
+        (&settings.theme, &settings.accent_theme, &settings.api_key, &settings.model_url, &settings.model_name, &settings.selected_preset_id, &settings.app_theme),
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -231,6 +234,13 @@ pub fn export_presets(preset_ids: Option<Vec<i64>>, state: State<'_, AppState>) 
     };
 
     serde_json::to_string_pretty(&export_file).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn export_presets_to_file(path: String, preset_ids: Option<Vec<i64>>, state: State<'_, AppState>) -> Result<(), String> {
+    let json = export_presets(preset_ids, state)?;
+    std::fs::write(&path, json).map_err(|e| format!("Failed to save file: {}", e))?;
+    Ok(())
 }
 
 #[tauri::command]

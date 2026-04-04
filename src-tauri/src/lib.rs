@@ -26,6 +26,7 @@ pub fn run() {
 
       Ok(())
     })
+    .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![
         commands::get_settings,
         commands::update_settings,
@@ -35,6 +36,7 @@ pub fn run() {
         commands::delete_preset,
         commands::duplicate_preset,
         commands::export_presets,
+        commands::export_presets_to_file,
         commands::import_presets,
         commands::update_chat_preset,
         commands::lock_chat_preset,

@@ -40,6 +40,8 @@ pub struct Chat {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
+    #[serde(default = "default_app_theme")]
+    pub app_theme: String,
     pub theme: String,
     #[serde(default = "default_accent_theme")]
     pub accent_theme: String,
@@ -48,6 +50,10 @@ pub struct Settings {
     pub model_name: String,
     #[serde(default)]
     pub selected_preset_id: Option<i64>,
+}
+
+fn default_app_theme() -> String {
+    "cubiq-dark".to_string()
 }
 
 fn default_accent_theme() -> String {

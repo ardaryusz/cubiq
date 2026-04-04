@@ -101,6 +101,11 @@ pub fn init_db(app_dir: PathBuf) -> Result<Connection> {
         migrate_v0_to_v1(&conn)?;
         conn.pragma_update(None, "user_version", 1)?;
     }
+    
+    if version < 2 {
+        migrate_v1_to_v2(&conn)?;
+        conn.pragma_update(None, "user_version", 2)?;
+    }
 
     Ok(conn)
 }
@@ -195,6 +200,17 @@ fn migrate_v0_to_v1(conn: &Connection) -> Result<()> {
         "UPDATE settings SET selected_preset_id = ?1 WHERE id = 1",
         [&default_preset_id],
     )?;
+
+    tx.commit()?;
+    Ok(())
+}
+
+/// Migration from v1 (presets/accent_theme) to v2 (full app_theme).
+fn migrate_v1_to_v2(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+
+    // Add app_theme column, default to 'cubiq-dark'
+    tx.execute("ALTER TABLE settings ADD COLUMN app_theme TEXT NOT NULL DEFAULT 'cubiq-dark'", ())?;
 
     tx.commit()?;
     Ok(())

@@ -34,6 +34,7 @@ export interface Message {
 }
 
 export interface Settings {
+  app_theme: string;
   theme: 'light' | 'dark' | 'system';
   accent_theme: string;
   api_key: string;

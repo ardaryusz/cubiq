@@ -31,6 +31,9 @@ export const duplicatePreset = (id: number) => invoke<number>('duplicate_preset'
 export const exportPresets = (presetIds?: number[]) =>
     invoke<string>('export_presets', { presetIds: presetIds ?? null });
 
+export const exportPresetsToFile = (path: string, presetIds?: number[]) =>
+    invoke<void>('export_presets_to_file', { path, presetIds: presetIds ?? null });
+
 export const importPresets = (jsonContent: string) =>
     invoke<number[]>('import_presets', { jsonContent });
 

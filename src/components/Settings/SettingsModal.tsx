@@ -50,6 +50,7 @@ export default function SettingsModal() {
 
   const [form, setForm] = useState<SettingsType>({
     theme: settings?.theme ?? 'system',
+    app_theme: settings?.app_theme ?? 'cubiq-dark',
     accent_theme: settings?.accent_theme ?? 'emerald',
     api_key: settings?.api_key ?? '',
     model_url: settings?.model_url ?? 'https://api.groq.com/openai/v1',
