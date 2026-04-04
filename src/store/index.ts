@@ -40,33 +40,20 @@ interface AppState {
   lockChatPreset: (chatId: number) => Promise<void>;
 }
 
-/** Apply the appearance theme (dark/light/system) to the document. */
-function applyTheme(theme: string) {
-  if (theme === 'dark') {
-    document.documentElement.classList.add('dark');
-  } else if (theme === 'light') {
-    document.documentElement.classList.remove('dark');
-  } else {
-    // system
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }
-}
-
-/** Apply the accent theme class to the document. */
-function applyAccentTheme(accentTheme: string) {
-  // Remove any existing accent classes
+/** Apply the full app theme class to the document. */
+function applyAppTheme(appTheme: string) {
   const classes = document.documentElement.classList;
   const toRemove: string[] = [];
-  classes.forEach(c => { if (c.startsWith('accent-')) toRemove.push(c); });
+  // Remove any legacy dark/accent classes and existing theme classes
+  classes.forEach(c => { 
+    if (c.startsWith('theme-') || c === 'dark' || c.startsWith('accent-')) {
+      toRemove.push(c); 
+    } 
+  });
   toRemove.forEach(c => classes.remove(c));
 
-  // Apply the new accent class (emerald is the default, no class needed)
-  if (accentTheme && accentTheme !== 'emerald') {
-    classes.add(`accent-${accentTheme}`);
+  if (appTheme) {
+    classes.add(`theme-${appTheme}`);
   }
 }
 
@@ -89,8 +76,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ipc.getPresets(),
       ]);
       
-      applyTheme(settings.theme);
-      applyAccentTheme(settings.accent_theme);
+      applyAppTheme(settings.app_theme);
 
       set({ settings, chats, presets, isLoading: false });
     } catch (err: unknown) {
@@ -168,8 +154,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: async (settings) => {
     try {
       await ipc.updateSettings(settings);
-      applyTheme(settings.theme);
-      applyAccentTheme(settings.accent_theme);
+      applyAppTheme(settings.app_theme);
       set({ settings });
     } catch (err: unknown) {
       set({ error: String(err) });

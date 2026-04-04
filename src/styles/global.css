@@ -1,57 +1,296 @@
-:root {
-  /* Light Theme Colors */
-  --bg-color: #f7f7f8;
-  --bg-sidebar: #ececf1;
-  --bg-header: #ffffff;
-  --bg-message-user: #ffffff;
-  --bg-message-ai: transparent;
-  --text-main: #343541;
-  --text-muted: #8e8ea0;
-  --border-color: #d9d9e3;
-  --accent-color: #10a37f;
-  --accent-hover: #1a7f64;
-  --danger-color: #ef4444;
+:root, .theme-cubiq-dark {
+  /* Default to Cubiq Dark if no class is present */
+  /* Surface Tokens */
+  --bg-app: #343541;
+  --bg-sidebar: #202123;
+  --bg-surface: #444654;
+  --bg-surface-elevated: #3b3c4f;
   
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  /* Text Tokens */
+  --text-primary: #d1d5db;
+  --text-secondary: #9ca3af;
+  --text-muted: #8e8ea0;
+  
+  /* Border Tokens */
+  --border-light: rgba(255, 255, 255, 0.05);
+  --border-medium: #4d4d4f;
+  
+  /* Accent Tokens */
+  --accent-base: #10a37f;
+  --accent-hover: #0d8c6d;
+  --accent-text: #ffffff;
+  
+  /* Message Bubble Tokens */
+  --bg-user-bubble: #444654;
+  --text-user-bubble: #d1d5db;
+  --bg-assistant-bubble: transparent;
+  
+  /* Input/Composer Tokens */
+  --bg-composer: #40414f;
+  --border-composer: rgba(255,255,255,0.2);
+  
+  /* Code Block Tokens */
+  --bg-code-block: #0d0d0d;
+  --border-code-block: #212121;
+  
+  /* State Tokens */
+  --state-hover: rgba(255, 255, 255, 0.05);
+  --state-active: rgba(255, 255, 255, 0.1);
+  --danger-color: #ef4444;
+
+  /* Shadows (unchanged) */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
   
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
+
+  /* Legacy aliases for backward compatibility during migration */
+  --bg-color: var(--bg-app);
+  --bg-header: var(--bg-app);
+  --bg-message-user: var(--bg-user-bubble);
+  --bg-message-ai: var(--bg-assistant-bubble);
+  --text-main: var(--text-primary);
+  --border-color: var(--border-medium);
+  --accent-color: var(--accent-base);
 }
 
-html.dark {
-  /* Dark Theme Colors */
-  --bg-color: #343541;
-  --bg-sidebar: #202123;
-  --bg-header: #343541;
-  --bg-message-user: #444654;
-  --bg-message-ai: transparent;
-  --text-main: #d1d5db;
+/* 2. Cubiq Light */
+.theme-cubiq-light {
+  --bg-app: #f7f7f8;
+  --bg-sidebar: #ececf1;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #ffffff;
+  --text-primary: #343541;
+  --text-secondary: #565869;
   --text-muted: #8e8ea0;
-  --border-color: #4d4d4f;
-  --accent-color: #10a37f;
-  --accent-hover: #0d8c6d;
-
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
-  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+  --border-light: rgba(0, 0, 0, 0.05);
+  --border-medium: #d9d9e3;
+  --accent-base: #10a37f;
+  --accent-hover: #1a7f64;
+  --accent-text: #ffffff;
+  --bg-user-bubble: #ffffff;
+  --text-user-bubble: #343541;
+  --bg-composer: #ffffff;
+  --border-composer: rgba(0,0,0,0.2);
+  --bg-code-block: #f4f4f4;
+  --border-code-block: #e5e5e5;
+  --state-hover: rgba(0, 0, 0, 0.05);
+  --state-active: rgba(0, 0, 0, 0.1);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
-/* ── Accent Theme Palettes ──────────────────────────────────────── */
-/* Emerald is the default (no class needed) */
-html.accent-violet   { --accent-color: #7c3aed; --accent-hover: #6d28d9; }
-html.accent-ocean    { --accent-color: #0ea5e9; --accent-hover: #0284c7; }
-html.accent-rose     { --accent-color: #f43f5e; --accent-hover: #e11d48; }
-html.accent-amber    { --accent-color: #d97706; --accent-hover: #b45309; }
-html.accent-slate    { --accent-color: #64748b; --accent-hover: #475569; }
+/* 3. Midnight Violet */
+.theme-midnight-violet {
+  --bg-app: #1e1b4b;
+  --bg-sidebar: #131032;
+  --bg-surface: #2e2a6d;
+  --bg-surface-elevated: #3b3687;
+  --text-primary: #ede9fe;
+  --text-secondary: #c4b5fd;
+  --text-muted: #8b5cf6;
+  --border-light: rgba(139, 92, 246, 0.1);
+  --border-medium: #4c1d95;
+  --accent-base: #a78bfa;
+  --accent-hover: #8b5cf6;
+  --accent-text: #1e1b4b;
+  --bg-user-bubble: #4c1d95;
+  --text-user-bubble: #ede9fe;
+  --bg-composer: #2e2a6d;
+  --border-composer: rgba(167, 139, 250, 0.3);
+  --bg-code-block: #0f0b29;
+  --border-code-block: #2e1065;
+  --state-hover: rgba(167, 139, 250, 0.1);
+  --state-active: rgba(167, 139, 250, 0.2);
+}
 
-html.dark.accent-violet   { --accent-color: #a78bfa; --accent-hover: #8b5cf6; }
-html.dark.accent-ocean    { --accent-color: #38bdf8; --accent-hover: #0ea5e9; }
-html.dark.accent-rose     { --accent-color: #fb7185; --accent-hover: #f43f5e; }
-html.dark.accent-amber    { --accent-color: #fbbf24; --accent-hover: #f59e0b; }
-html.dark.accent-slate    { --accent-color: #94a3b8; --accent-hover: #64748b; }
+/* 4. Ocean Glass */
+.theme-ocean-glass {
+  --bg-app: #082f49;
+  --bg-sidebar: #042439;
+  --bg-surface: #0369a1;
+  --bg-surface-elevated: #0284c7;
+  --text-primary: #f0f9ff;
+  --text-secondary: #bae6fd;
+  --text-muted: #38bdf8;
+  --border-light: rgba(56, 189, 248, 0.1);
+  --border-medium: #0369a1;
+  --accent-base: #38bdf8;
+  --accent-hover: #0ea5e9;
+  --accent-text: #082f49;
+  --bg-user-bubble: #0c4a6e;
+  --text-user-bubble: #f0f9ff;
+  --bg-composer: #0369a1;
+  --border-composer: rgba(56, 189, 248, 0.3);
+  --bg-code-block: #021a2b;
+  --border-code-block: #0c4a6e;
+  --state-hover: rgba(56, 189, 248, 0.1);
+  --state-active: rgba(56, 189, 248, 0.2);
+}
+
+/* 5. Rose Noir */
+.theme-rose-noir {
+  --bg-app: #171717;
+  --bg-sidebar: #0a0a0a;
+  --bg-surface: #262626;
+  --bg-surface-elevated: #404040;
+  --text-primary: #f5f5f5;
+  --text-secondary: #a3a3a3;
+  --text-muted: #737373;
+  --border-light: rgba(244, 63, 94, 0.1);
+  --border-medium: #3f3f46;
+  --accent-base: #f43f5e;
+  --accent-hover: #e11d48;
+  --accent-text: #ffffff;
+  --bg-user-bubble: #881337;
+  --text-user-bubble: #f5f5f5;
+  --bg-composer: #262626;
+  --border-composer: rgba(244, 63, 94, 0.3);
+  --bg-code-block: #000000;
+  --border-code-block: #171717;
+  --state-hover: rgba(244, 63, 94, 0.1);
+  --state-active: rgba(244, 63, 94, 0.2);
+}
+
+/* 6. Amber Terminal */
+.theme-amber-terminal {
+  --bg-app: #1c1917;
+  --bg-sidebar: #0c0a09;
+  --bg-surface: #292524;
+  --bg-surface-elevated: #44403c;
+  --text-primary: #fbbf24;
+  --text-secondary: #fcd34d;
+  --text-muted: #b45309;
+  --border-light: rgba(251, 191, 36, 0.1);
+  --border-medium: #78350f;
+  --accent-base: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-text: #1c1917;
+  --bg-user-bubble: #451a03;
+  --text-user-bubble: #fbbf24;
+  --bg-composer: #292524;
+  --border-composer: #92400e;
+  --bg-code-block: #000000;
+  --border-code-block: #451a03;
+  --state-hover: rgba(251, 191, 36, 0.1);
+  --state-active: rgba(251, 191, 36, 0.2);
+}
+
+/* 7. Slate Minimal */
+.theme-slate-minimal {
+  --bg-app: #f8fafc;
+  --bg-sidebar: #f1f5f9;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --border-light: #e2e8f0;
+  --border-medium: #cbd5e1;
+  --accent-base: #475569;
+  --accent-hover: #334155;
+  --accent-text: #ffffff;
+  --bg-user-bubble: #f1f5f9;
+  --text-user-bubble: #0f172a;
+  --bg-composer: #ffffff;
+  --border-composer: #cbd5e1;
+  --bg-code-block: #f1f5f9;
+  --border-code-block: #e2e8f0;
+  --state-hover: rgba(15, 23, 42, 0.05);
+  --state-active: rgba(15, 23, 42, 0.1);
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* 8. Paper Studio */
+.theme-paper-studio {
+  --bg-app: #faf8f5;
+  --bg-sidebar: #eeeae3;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f4efe8;
+  --text-primary: #433e38;
+  --text-secondary: #6e675f;
+  --text-muted: #9e9689;
+  --border-light: #e8e3dc;
+  --border-medium: #d6cfc4;
+  --accent-base: #a0522d;
+  --accent-hover: #8b4513;
+  --accent-text: #ffffff;
+  --bg-user-bubble: #eeeae3;
+  --text-user-bubble: #433e38;
+  --bg-composer: #ffffff;
+  --border-composer: #d6cfc4;
+  --bg-code-block: #fdfcfb;
+  --border-code-block: #e8e3dc;
+  --state-hover: rgba(160, 82, 45, 0.05);
+  --state-active: rgba(160, 82, 45, 0.1);
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* 9. Mint Studio */
+.theme-mint-studio {
+  --bg-app: #f0fdf4;
+  --bg-sidebar: #dcfce7;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f0fdf4;
+  --text-primary: #14532d;
+  --text-secondary: #166534;
+  --text-muted: #22c55e;
+  --border-light: #bbf7d0;
+  --border-medium: #86efac;
+  --accent-base: #16a34a;
+  --accent-hover: #15803d;
+  --accent-text: #ffffff;
+  --bg-user-bubble: #bbf7d0;
+  --text-user-bubble: #14532d;
+  --bg-composer: #ffffff;
+  --border-composer: #4ade80;
+  --bg-code-block: #f0fdf4;
+  --border-code-block: #bbf7d0;
+  --state-hover: rgba(22, 163, 74, 0.1);
+  --state-active: rgba(22, 163, 74, 0.2);
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* 10. Monochrome Pro */
+.theme-monochrome-pro {
+  --bg-app: #ffffff;
+  --bg-sidebar: #f4f4f4;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #ffffff;
+  --text-primary: #000000;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+  --border-light: #eeeeee;
+  --border-medium: #cccccc;
+  --accent-base: #000000;
+  --accent-hover: #333333;
+  --accent-text: #ffffff;
+  --bg-user-bubble: #f4f4f4;
+  --text-user-bubble: #000000;
+  --bg-composer: #ffffff;
+  --border-composer: #000000;
+  --bg-code-block: #fafafa;
+  --border-code-block: #eeeeee;
+  --state-hover: rgba(0, 0, 0, 0.05);
+  --state-active: rgba(0, 0, 0, 0.1);
+  
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-modal: 0 0 0 1px #000000;
+}
 
 * {
   box-sizing: border-box;
@@ -61,8 +300,8 @@ html.dark.accent-slate    { --accent-color: #94a3b8; --accent-hover: #64748b; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--bg-color);
-  color: var(--text-main);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
   height: 100vh;
   overflow: hidden;
   line-height: 1.5;

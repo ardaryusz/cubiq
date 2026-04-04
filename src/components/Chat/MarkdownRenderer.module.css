@@ -38,7 +38,7 @@
 .markdown h3 { font-size: 1.1rem; }
 
 .markdown blockquote {
-  border-left: 3px solid var(--accent-color);
+  border-left: 3px solid var(--accent-base);
   padding-left: 12px;
   margin: 8px 0;
   color: var(--text-muted);
@@ -46,7 +46,7 @@
 
 .markdown hr {
   border: none;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-medium);
   margin: 16px 0;
 }
 
@@ -56,36 +56,29 @@
   width: 100%;
 }
 .markdown th, .markdown td {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-medium);
   padding: 8px 12px;
   text-align: left;
 }
 .markdown th {
-  background-color: rgba(0, 0, 0, 0.03);
+  background-color: var(--state-hover);
   font-weight: 600;
-}
-html.dark .markdown th {
-  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .inlineCode {
-  background-color: rgba(0, 0, 0, 0.06);
-  color: #c7254e;
+  background-color: var(--state-hover);
+  color: var(--text-primary);
   padding: 2px 6px;
   border-radius: 4px;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 0.875em;
-}
-html.dark .inlineCode {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: #e06c75;
 }
 
 .codeBlock {
   margin: 12px 0;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-medium);
   display: flex;
   flex-direction: column;
 }

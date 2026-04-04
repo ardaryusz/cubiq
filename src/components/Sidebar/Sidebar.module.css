@@ -3,7 +3,7 @@
   background-color: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-medium);
   padding: 10px;
 }
 
@@ -12,20 +12,16 @@
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
   margin-bottom: 15px;
   font-weight: 500;
   transition: background-color 0.2s;
-  color: var(--text-main);
+  color: var(--text-primary);
 }
 
 .newChatBtn:hover {
-  background-color: rgba(0,0,0,0.05);
-}
-
-html.dark .newChatBtn:hover {
-  background-color: rgba(255,255,255,0.05);
+  background-color: var(--state-hover);
 }
 
 .chatList {
@@ -40,7 +36,7 @@ html.dark .newChatBtn:hover {
   padding: 10px;
   border-radius: var(--radius-md);
   font-size: 0.9rem;
-  color: var(--text-main);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -48,24 +44,18 @@ html.dark .newChatBtn:hover {
 }
 
 .chatItem:hover {
-  background-color: rgba(0,0,0,0.05);
-}
-html.dark .chatItem:hover {
-  background-color: rgba(255,255,255,0.05);
+  background-color: var(--state-hover);
 }
 
 .chatItemActive {
-  background-color: rgba(0,0,0,0.1);
+  background-color: var(--state-active);
   font-weight: 500;
-}
-html.dark .chatItemActive {
-  background-color: rgba(255,255,255,0.1);
 }
 
 .bottomActions {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-medium);
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -78,11 +68,8 @@ html.dark .chatItemActive {
   padding: 10px;
   border-radius: var(--radius-md);
   font-size: 0.9rem;
-  color: var(--text-main);
+  color: var(--text-primary);
 }
 .actionBtn:hover {
-  background-color: rgba(0,0,0,0.05);
-}
-html.dark .actionBtn:hover {
-  background-color: rgba(255,255,255,0.05);
+  background-color: var(--state-hover);
 }
