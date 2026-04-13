@@ -36,6 +36,9 @@ pub struct Chat {
     pub customization_snapshot: Option<String>,
     pub preset_locked: bool,
     pub user_edited_title: bool,
+    /// Folder this chat belongs to. NULL means ungrouped ("No Folder").
+    /// Preserved even when the chat is archived so it returns to its folder on unarchive.
+    pub folder_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -76,4 +79,16 @@ pub struct PresetExportFile {
     pub cubiq_presets_version: u32,
     pub exported_at: String,
     pub presets: Vec<PresetExportItem>,
+}
+
+/// A folder that groups chats in the sidebar.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Folder {
+    pub id: i64,
+    pub name: String,
+    pub position: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+    /// Number of active (non-archived) chats in this folder. Computed at query time.
+    pub chat_count: i64,
 }

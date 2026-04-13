@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 use std::sync::Mutex;
 use tauri::State;
-use crate::models::{Chat, Message, Preset, Settings, PresetExportItem, PresetExportFile};
+use crate::models::{Chat, Folder, Message, Preset, Settings, PresetExportItem, PresetExportFile};
 
 /// Global Cubiq identity prompt, always prepended to every AI request.
 const CUBIQ_IDENTITY_PROMPT: &str = "You are Cubiq, the AI assistant inside the Cubiq desktop app. Identify yourself as Cubiq only when the user asks who you are. Do not identify yourself as ChatGPT, Meta AI, Claude, Gemini, or any other assistant brand. Do not mention your name in every response — only when directly asked.";
@@ -417,7 +417,7 @@ pub fn get_chats(state: State<'_, AppState>) -> Result<Vec<Chat>, String> {
     let mut stmt = db.prepare(
         "SELECT id, title, created_at, updated_at, archived,
                 preset_id, preset_name_snapshot, model_url_snapshot, model_name_snapshot,
-                customization_snapshot, preset_locked, user_edited_title
+                customization_snapshot, preset_locked, user_edited_title, folder_id
          FROM chats ORDER BY updated_at DESC"
     ).map_err(|e| e.to_string())?;
 
@@ -435,6 +435,7 @@ pub fn get_chats(state: State<'_, AppState>) -> Result<Vec<Chat>, String> {
             customization_snapshot: row.get(9)?,
             preset_locked: row.get(10)?,
             user_edited_title: row.get(11)?,
+            folder_id: row.get(12)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -476,8 +477,8 @@ pub fn create_chat(title: String, state: State<'_, AppState>) -> Result<i64, Str
     };
 
     db.execute(
-        "INSERT INTO chats (title, created_at, updated_at, archived, preset_id, preset_name_snapshot, model_url_snapshot, model_name_snapshot, customization_snapshot, preset_locked, user_edited_title)
-         VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, 0, 0)",
+        "INSERT INTO chats (title, created_at, updated_at, archived, preset_id, preset_name_snapshot, model_url_snapshot, model_name_snapshot, customization_snapshot, preset_locked, user_edited_title, folder_id)
+         VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, 0, 0, NULL)",
         rusqlite::params![title, now, now, preset_id, preset_name, model_url, model_name, customization],
     ).map_err(|e| e.to_string())?;
 
@@ -769,3 +770,191 @@ pub async fn test_connection(
         .map_err(|e| e.to_string())?;
     Ok(reply)
 }
+
+// ── Folders ──────────────────────────────────────────────────────────
+
+/// Returns all folders ordered by position, with a live chat_count of non-archived chats.
+#[tauri::command]
+pub fn get_folders(state: State<'_, AppState>) -> Result<Vec<Folder>, String> {
+    let db = state.db.lock().unwrap();
+    let mut stmt = db.prepare(
+        "SELECT f.id, f.name, f.position, f.created_at, f.updated_at,
+                COUNT(c.id) as chat_count
+         FROM folders f
+         LEFT JOIN chats c ON c.folder_id = f.id AND c.archived = 0
+         GROUP BY f.id
+         ORDER BY f.position ASC, f.name ASC"
+    ).map_err(|e| e.to_string())?;
+
+    let iter = stmt.query_map((), |row| {
+        Ok(Folder {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            position: row.get(2)?,
+            created_at: row.get(3)?,
+            updated_at: row.get(4)?,
+            chat_count: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut folders = Vec::new();
+    for f in iter {
+        folders.push(f.map_err(|e| e.to_string())?);
+    }
+    Ok(folders)
+}
+
+/// Creates a new folder. Position is set to max+1 so new folders appear at the bottom.
+#[tauri::command]
+pub fn create_folder(name: String, state: State<'_, AppState>) -> Result<i64, String> {
+    let db = state.db.lock().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+
+    let max_pos: i64 = db
+        .query_row("SELECT COALESCE(MAX(position), -1) FROM folders", (), |r| r.get(0))
+        .unwrap_or(-1);
+
+    db.execute(
+        "INSERT INTO folders (name, position, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![name, max_pos + 1, now, now],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(db.last_insert_rowid())
+}
+
+/// Renames a folder.
+#[tauri::command]
+pub fn rename_folder(id: i64, name: String, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+
+    let changed = db.execute(
+        "UPDATE folders SET name = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![name, now, id],
+    ).map_err(|e| e.to_string())?;
+
+    if changed == 0 {
+        return Err(format!("Folder {} not found.", id));
+    }
+    Ok(())
+}
+
+/// Returns the count of active (non-archived) chats in a folder.
+/// Used by the frontend before showing the deletion confirmation.
+#[tauri::command]
+pub fn get_folder_chat_count(folder_id: i64, state: State<'_, AppState>) -> Result<i64, String> {
+    let db = state.db.lock().unwrap();
+    let count: i64 = db.query_row(
+        "SELECT COUNT(*) FROM chats WHERE folder_id = ?1 AND archived = 0",
+        [&folder_id],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+    Ok(count)
+}
+
+/// Deletes a folder and sets folder_id = NULL on all its chats (move to No Folder).
+/// The frontend must have already shown and confirmed the deletion dialog.
+#[tauri::command]
+pub fn delete_folder(id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+
+    // Nullify folder_id on all chats (archived or not — preserves assigned folder on re-archive)
+    db.execute(
+        "UPDATE chats SET folder_id = NULL WHERE folder_id = ?1",
+        [&id],
+    ).map_err(|e| e.to_string())?;
+
+    db.execute("DELETE FROM folders WHERE id = ?1", [&id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Updates the position of a folder (used for future reordering support).
+#[tauri::command]
+pub fn move_folder(id: i64, position: i64, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    db.execute(
+        "UPDATE folders SET position = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![position, now, id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Moves a single chat into a folder (or NULL for No Folder).
+#[tauri::command]
+pub fn move_chat_to_folder(chat_id: i64, folder_id: Option<i64>, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    db.execute(
+        "UPDATE chats SET folder_id = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![folder_id, now, chat_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ── Find Empty Chat ───────────────────────────────────────────────────
+
+/// Returns the id of the first unlocked, unarchived, message-less "New Chat" if one exists.
+/// Used by the frontend to prevent creating multiple empty new chats.
+#[tauri::command]
+pub fn find_empty_chat(state: State<'_, AppState>) -> Result<Option<i64>, String> {
+    let db = state.db.lock().unwrap();
+    let result: Option<i64> = db.query_row(
+        "SELECT id FROM chats
+         WHERE title = 'New Chat'
+           AND archived = 0
+           AND preset_locked = 0
+           AND NOT EXISTS (
+               SELECT 1 FROM messages WHERE messages.chat_id = chats.id
+           )
+         ORDER BY created_at DESC
+         LIMIT 1",
+        (),
+        |row| row.get(0),
+    ).ok();
+    Ok(result)
+}
+
+// ── Bulk Chat Actions ─────────────────────────────────────────────────
+
+/// Archives or unarchives multiple chats at once.
+#[tauri::command]
+pub fn bulk_archive_chats(ids: Vec<i64>, archived: bool, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    for id in &ids {
+        db.execute(
+            "UPDATE chats SET archived = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![archived, now, id],
+        ).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Permanently deletes multiple chats (cascades to messages).
+#[tauri::command]
+pub fn bulk_delete_chats(ids: Vec<i64>, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+    for id in &ids {
+        db.execute("DELETE FROM chats WHERE id = ?1", [id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Moves multiple chats to a folder (NULL = No Folder).
+#[tauri::command]
+pub fn bulk_move_chats(ids: Vec<i64>, folder_id: Option<i64>, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    for id in &ids {
+        db.execute(
+            "UPDATE chats SET folder_id = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![folder_id, now, id],
+        ).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+

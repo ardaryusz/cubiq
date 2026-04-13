@@ -1,26 +1,30 @@
 import { create } from 'zustand';
-import type { Chat, Settings, Preset } from '../types';
+import type { Chat, Folder, Settings, Preset } from '../types';
 import * as ipc from '../lib/ipc';
 
 interface AppState {
   chats: Chat[];
   settings: Settings | null;
   presets: Preset[];
+  folders: Folder[];
   activeChatId: number | null;
   showArchived: boolean;
   isSettingsOpen: boolean;
   isLoading: boolean;
   error: string | null;
 
-  // Actions
+  // Core actions
   initialize: () => Promise<void>;
   setActiveChat: (id: number | null) => void;
   setShowArchived: (show: boolean) => void;
   setSettingsOpen: (isOpen: boolean) => void;
-  
-  // Data actions
+
+  // Data refresh
   refreshChats: () => Promise<void>;
   refreshPresets: () => Promise<void>;
+  refreshFolders: () => Promise<void>;
+
+  // Chat CRUD
   createChat: (title: string) => Promise<number | null>;
   renameChat: (id: number, title: string) => Promise<void>;
   archiveChat: (id: number, archived: boolean) => Promise<void>;
@@ -38,20 +42,32 @@ interface AppState {
   // Chat preset actions
   updateChatPreset: (chatId: number, presetId: number) => Promise<void>;
   lockChatPreset: (chatId: number) => Promise<void>;
+
+  // Folder actions
+  createFolder: (name: string) => Promise<number | null>;
+  renameFolder: (id: number, name: string) => Promise<void>;
+  deleteFolder: (id: number) => Promise<void>;
+  moveChatToFolder: (chatId: number, folderId: number | null) => Promise<void>;
+
+  // Empty chat guard
+  createChatSafe: () => Promise<number | null>;
+
+  // Bulk actions
+  bulkArchiveChats: (ids: number[], archived: boolean) => Promise<void>;
+  bulkDeleteChats: (ids: number[]) => Promise<void>;
+  bulkMoveChats: (ids: number[], folderId: number | null) => Promise<void>;
 }
 
-/** Apply the full app theme class to the document. */
+/** Apply the full app theme class to the document root. */
 function applyAppTheme(appTheme: string) {
   const classes = document.documentElement.classList;
   const toRemove: string[] = [];
-  // Remove any legacy dark/accent classes and existing theme classes
-  classes.forEach(c => { 
+  classes.forEach(c => {
     if (c.startsWith('theme-') || c === 'dark' || c.startsWith('accent-')) {
-      toRemove.push(c); 
-    } 
+      toRemove.push(c);
+    }
   });
   toRemove.forEach(c => classes.remove(c));
-
   if (appTheme) {
     classes.add(`theme-${appTheme}`);
   }
@@ -61,6 +77,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   chats: [],
   settings: null,
   presets: [],
+  folders: [],
   activeChatId: null,
   showArchived: false,
   isSettingsOpen: false,
@@ -70,15 +87,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialize: async () => {
     try {
       set({ isLoading: true, error: null });
-      const [settings, chats, presets] = await Promise.all([
+      const [settings, chats, presets, folders] = await Promise.all([
         ipc.getSettings(),
         ipc.getChats(),
         ipc.getPresets(),
+        ipc.getFolders(),
       ]);
-      
-      applyAppTheme(settings.app_theme);
 
-      set({ settings, chats, presets, isLoading: false });
+      applyAppTheme(settings.app_theme);
+      set({ settings, chats, presets, folders, isLoading: false });
     } catch (err: unknown) {
       set({ error: String(err), isLoading: false });
     }
@@ -93,7 +110,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const chats = await ipc.getChats();
       set({ chats });
     } catch (error) {
-      console.error("Failed to load chats", error);
+      console.error('Failed to load chats', error);
     }
   },
 
@@ -102,9 +119,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       const presets = await ipc.getPresets();
       set({ presets });
     } catch (error) {
-      console.error("Failed to load presets", error);
+      console.error('Failed to load presets', error);
     }
   },
+
+  refreshFolders: async () => {
+    try {
+      const folders = await ipc.getFolders();
+      set({ folders });
+    } catch (error) {
+      console.error('Failed to load folders', error);
+    }
+  },
+
+  // ── Chat CRUD ────────────────────────────────────────────────────────
 
   createChat: async (title) => {
     try {
@@ -113,8 +141,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ activeChatId: id });
       return id;
     } catch (error) {
-      console.error("Failed to create chat", error);
+      console.error('Failed to create chat', error);
       return null;
+    }
+  },
+
+  /** Guard: if an empty unlocked "New Chat" already exists, select it instead of creating another. */
+  createChatSafe: async () => {
+    try {
+      const existingId = await ipc.findEmptyChat();
+      if (existingId !== null && existingId !== undefined) {
+        set({ activeChatId: existingId });
+        return existingId;
+      }
+      return get().createChat('New Chat');
+    } catch (error) {
+      console.error('Failed to create chat safely', error);
+      return get().createChat('New Chat');
     }
   },
 
@@ -123,7 +166,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await ipc.renameChat(id, title);
       await get().refreshChats();
     } catch (error) {
-        console.error(error);
+      console.error(error);
     }
   },
 
@@ -135,7 +178,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ activeChatId: null });
       }
     } catch (error) {
-        console.error(error);
+      console.error(error);
     }
   },
 
@@ -147,7 +190,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ activeChatId: null });
       }
     } catch (error) {
-        console.error(error);
+      console.error(error);
     }
   },
 
@@ -169,7 +212,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().refreshPresets();
       return id;
     } catch (error) {
-      console.error("Failed to create preset", error);
+      console.error('Failed to create preset', error);
       return null;
     }
   },
@@ -179,7 +222,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await ipc.updatePreset(id, name, modelUrl, modelName, customModelName, customizationPrompt);
       await get().refreshPresets();
     } catch (error) {
-      console.error("Failed to update preset", error);
+      console.error('Failed to update preset', error);
     }
   },
 
@@ -188,7 +231,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await ipc.deletePreset(id);
       await get().refreshPresets();
     } catch (error) {
-      console.error("Failed to delete preset", error);
+      console.error('Failed to delete preset', error);
     }
   },
 
@@ -198,7 +241,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().refreshPresets();
       return newId;
     } catch (error) {
-      console.error("Failed to duplicate preset", error);
+      console.error('Failed to duplicate preset', error);
       return null;
     }
   },
@@ -207,7 +250,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       return await ipc.exportPresets(presetIds);
     } catch (error) {
-      console.error("Failed to export presets", error);
+      console.error('Failed to export presets', error);
       return null;
     }
   },
@@ -218,7 +261,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().refreshPresets();
       return ids;
     } catch (error) {
-      console.error("Failed to import presets", error);
+      console.error('Failed to import presets', error);
       return null;
     }
   },
@@ -230,7 +273,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await ipc.updateChatPreset(chatId, presetId);
       await get().refreshChats();
     } catch (error) {
-      console.error("Failed to update chat preset", error);
+      console.error('Failed to update chat preset', error);
     }
   },
 
@@ -239,7 +282,86 @@ export const useAppStore = create<AppState>((set, get) => ({
       await ipc.lockChatPreset(chatId);
       await get().refreshChats();
     } catch (error) {
-      console.error("Failed to lock chat preset", error);
+      console.error('Failed to lock chat preset', error);
+    }
+  },
+
+  // ── Folder actions ──────────────────────────────────────────────────
+
+  createFolder: async (name) => {
+    try {
+      const id = await ipc.createFolder(name);
+      await get().refreshFolders();
+      return id;
+    } catch (error) {
+      console.error('Failed to create folder', error);
+      return null;
+    }
+  },
+
+  renameFolder: async (id, name) => {
+    try {
+      await ipc.renameFolder(id, name);
+      await get().refreshFolders();
+    } catch (error) {
+      console.error('Failed to rename folder', error);
+    }
+  },
+
+  deleteFolder: async (id) => {
+    try {
+      await ipc.deleteFolder(id);
+      // Chats' folder_id becomes null on the backend — refresh both
+      await Promise.all([get().refreshFolders(), get().refreshChats()]);
+    } catch (error) {
+      console.error('Failed to delete folder', error);
+    }
+  },
+
+  moveChatToFolder: async (chatId, folderId) => {
+    try {
+      await ipc.moveChatToFolder(chatId, folderId);
+      await Promise.all([get().refreshChats(), get().refreshFolders()]);
+    } catch (error) {
+      console.error('Failed to move chat to folder', error);
+    }
+  },
+
+  // ── Bulk actions ─────────────────────────────────────────────────────
+
+  bulkArchiveChats: async (ids, archived) => {
+    try {
+      await ipc.bulkArchiveChats(ids, archived);
+      await get().refreshChats();
+      // If the active chat was archived, deselect it
+      const active = get().activeChatId;
+      if (archived && active !== null && ids.includes(active)) {
+        set({ activeChatId: null });
+      }
+    } catch (error) {
+      console.error('Failed to bulk archive chats', error);
+    }
+  },
+
+  bulkDeleteChats: async (ids) => {
+    try {
+      await ipc.bulkDeleteChats(ids);
+      await get().refreshChats();
+      const active = get().activeChatId;
+      if (active !== null && ids.includes(active)) {
+        set({ activeChatId: null });
+      }
+    } catch (error) {
+      console.error('Failed to bulk delete chats', error);
+    }
+  },
+
+  bulkMoveChats: async (ids, folderId) => {
+    try {
+      await ipc.bulkMoveChats(ids, folderId);
+      await Promise.all([get().refreshChats(), get().refreshFolders()]);
+    } catch (error) {
+      console.error('Failed to bulk move chats', error);
     }
   },
 }));

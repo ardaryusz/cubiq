@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Chat, Message, Settings, Preset } from '../types';
+import type { Chat, Folder, Message, Settings, Preset } from '../types';
 
 // ── Settings ─────────────────────────────────────────────────────────
 export const getSettings = () => invoke<Settings>('get_settings');
@@ -64,3 +64,26 @@ export const sendChatMessage = (chatId: number) =>
 
 export const testConnection = (apiKey: string, modelUrl: string, modelName: string) =>
     invoke<string>('test_connection', { apiKey, modelUrl, modelName });
+
+// ── Folders ──────────────────────────────────────────────────────────
+export const getFolders = () => invoke<Folder[]>('get_folders');
+export const createFolder = (name: string) => invoke<number>('create_folder', { name });
+export const renameFolder = (id: number, name: string) => invoke<void>('rename_folder', { id, name });
+export const deleteFolder = (id: number) => invoke<void>('delete_folder', { id });
+export const getFolderChatCount = (folderId: number) => invoke<number>('get_folder_chat_count', { folderId });
+export const moveFolder = (id: number, position: number) => invoke<void>('move_folder', { id, position });
+export const moveChatToFolder = (chatId: number, folderId: number | null) =>
+    invoke<void>('move_chat_to_folder', { chatId, folderId });
+
+// ── Empty Chat Guard ──────────────────────────────────────────────────
+export const findEmptyChat = () => invoke<number | null>('find_empty_chat');
+
+// ── Bulk Actions ──────────────────────────────────────────────────────
+export const bulkArchiveChats = (ids: number[], archived: boolean) =>
+    invoke<void>('bulk_archive_chats', { ids, archived });
+
+export const bulkDeleteChats = (ids: number[]) =>
+    invoke<void>('bulk_delete_chats', { ids });
+
+export const bulkMoveChats = (ids: number[], folderId: number | null) =>
+    invoke<void>('bulk_move_chats', { ids, folderId });

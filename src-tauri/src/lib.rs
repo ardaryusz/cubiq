@@ -48,7 +48,21 @@ pub fn run() {
         commands::get_messages,
         commands::add_message,
         commands::send_chat_message,
-        commands::test_connection
+        commands::test_connection,
+        // Phase A: Folders
+        commands::get_folders,
+        commands::create_folder,
+        commands::rename_folder,
+        commands::delete_folder,
+        commands::get_folder_chat_count,
+        commands::move_folder,
+        commands::move_chat_to_folder,
+        // Phase A: Empty chat guard
+        commands::find_empty_chat,
+        // Phase A: Bulk actions
+        commands::bulk_archive_chats,
+        commands::bulk_delete_chats,
+        commands::bulk_move_chats,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

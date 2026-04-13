@@ -107,6 +107,11 @@ pub fn init_db(app_dir: PathBuf) -> Result<Connection> {
         conn.pragma_update(None, "user_version", 2)?;
     }
 
+    if version < 3 {
+        migrate_v2_to_v3(&conn)?;
+        conn.pragma_update(None, "user_version", 3)?;
+    }
+
     Ok(conn)
 }
 
@@ -211,6 +216,39 @@ fn migrate_v1_to_v2(conn: &Connection) -> Result<()> {
 
     // Add app_theme column, default to 'cubiq-dark'
     tx.execute("ALTER TABLE settings ADD COLUMN app_theme TEXT NOT NULL DEFAULT 'cubiq-dark'", ())?;
+
+    tx.commit()?;
+    Ok(())
+}
+
+/// Migration from v2 (app_theme) to v3 (folders + chat.folder_id).
+///
+/// - Creates the `folders` table.
+/// - Adds `folder_id` to `chats` (nullable, defaults to NULL = ungrouped).
+/// - All existing chats keep folder_id = NULL and remain in "No Folder".
+fn migrate_v2_to_v3(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+
+    // ── 1. Create folders table ──────────────────────────────────────
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS folders (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT    NOT NULL,
+            position   INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        (),
+    )?;
+
+    // ── 2. Add folder_id to chats ────────────────────────────────────
+    // NULL = ungrouped (No Folder). Foreign key enforced at application level
+    // since SQLite ALTER TABLE cannot add FK constraints directly.
+    // ON DELETE SET NULL behaviour is handled in the delete_folder command.
+    tx.execute(
+        "ALTER TABLE chats ADD COLUMN folder_id INTEGER",
+        (),
+    )?;
 
     tx.commit()?;
     Ok(())
