@@ -1,3 +1,4 @@
+/* ── Sidebar shell ─────────────────────────────────────────── */
 .sidebar {
   width: 260px;
   background-color: var(--bg-sidebar);
@@ -5,60 +6,207 @@
   flex-direction: column;
   border-right: 1px solid var(--border-medium);
   padding: 10px;
+  overflow: hidden;
+}
+
+/* ── Top row: New Chat + Select ───────────────────────────── */
+.topRow {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
 .newChatBtn {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
+  gap: 10px;
+  padding: 10px 12px;
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
-  margin-bottom: 15px;
   font-weight: 500;
-  transition: background-color 0.2s;
+  transition: background-color 0.15s;
   color: var(--text-primary);
+  font-size: 0.9rem;
 }
-
 .newChatBtn:hover {
   background-color: var(--state-hover);
 }
 
+.newFolderBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  transition: background-color 0.15s;
+  flex-shrink: 0;
+}
+.newFolderBtn:hover {
+  background-color: var(--state-hover);
+  color: var(--text-primary);
+}
+
+/* ── Chat list scroll area ─────────────────────────────────── */
 .chatList {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 2px;
+  padding-right: 2px;
 }
 
-.chatItem {
-  padding: 10px;
+/* ── Folder section ────────────────────────────────────────── */
+.folderSection {
+  margin-bottom: 4px;
+}
+
+.folderHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
   border-radius: var(--radius-md);
-  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: background-color 0.15s;
+}
+.folderHeader:hover {
+  background-color: var(--state-hover);
   color: var(--text-primary);
+}
+
+.folderChevron {
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.folderChevronOpen {
+  transform: rotate(90deg);
+}
+
+.folderName {
+  flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  user-select: none;
+  min-width: 0;
 }
 
+.folderCount {
+  font-size: 0.72rem;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--state-hover);
+  flex-shrink: 0;
+}
+
+.folderMenuBtn {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 4px;
+  opacity: 0;
+  color: var(--text-muted);
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.folderHeader:hover .folderMenuBtn {
+  opacity: 1;
+}
+.folderMenuBtn:hover {
+  background: var(--state-active);
+  color: var(--text-primary);
+}
+
+.folderChildren {
+  padding-left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+/* ── No Folder section heading ─────────────────────────────── */
+.noFolderHeading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  user-select: none;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s;
+}
+.noFolderHeading:hover {
+  background-color: var(--state-hover);
+  color: var(--text-primary);
+}
+
+/* ── Individual chat row ───────────────────────────────────── */
+.chatItem {
+  display: flex;
+  align-items: center;
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  user-select: none;
+  position: relative;
+  gap: 6px;
+  text-align: left;
+  width: 100%;
+  overflow: hidden;
+}
 .chatItem:hover {
   background-color: var(--state-hover);
 }
-
 .chatItemActive {
   background-color: var(--state-active);
   font-weight: 500;
 }
 
+.chatItemTitle {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* inline rename input */
+.chatItemInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  border-bottom: 1px solid var(--accent-base);
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  padding: 0;
+  min-width: 0;
+}
+
+/* ── Bottom actions ────────────────────────────────────────── */
 .bottomActions {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--border-medium);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 .actionBtn {
@@ -73,3 +221,192 @@
 .actionBtn:hover {
   background-color: var(--state-hover);
 }
+
+/* ── Context menu ──────────────────────────────────────────── */
+.contextMenu {
+  position: fixed;
+  z-index: 9999;
+  background: var(--bg-surface-elevated, var(--bg-surface));
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  min-width: 170px;
+  animation: menuFadeIn 0.1s ease;
+}
+
+@keyframes menuFadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.contextMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.contextMenuItem:hover {
+  background: var(--state-hover);
+}
+.contextMenuItemDanger {
+  color: var(--danger-color);
+}
+.contextMenuItemDanger:hover {
+  background: rgba(239, 68, 68, 0.08);
+}
+.contextMenuDivider {
+  height: 1px;
+  background: var(--border-medium);
+  margin: 4px 0;
+}
+
+/* submenu */
+.contextMenuSub {
+  position: relative;
+}
+.contextMenuSubPanel {
+  position: fixed;
+  z-index: 10000;
+  background: var(--bg-surface-elevated, var(--bg-surface));
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  min-width: 160px;
+  animation: menuFadeIn 0.1s ease;
+}
+.contextMenuSubItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.contextMenuSubItem:hover {
+  background: var(--state-hover);
+}
+
+/* ── Folder inline name input ──────────────────────────────── */
+.folderNameInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  border-bottom: 1px solid var(--accent-base);
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  padding: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+  min-width: 0;
+}
+
+/* ── New folder creation row ───────────────────────────────── */
+.newFolderRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  background: var(--state-hover);
+  margin-bottom: 4px;
+}
+.newFolderInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  padding: 0;
+  min-width: 0;
+}
+.newFolderConfirmBtn {
+  color: var(--accent-base);
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 4px;
+}
+.newFolderConfirmBtn:hover {
+  background: var(--state-active);
+}
+.newFolderCancelBtn {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 4px;
+}
+.newFolderCancelBtn:hover {
+  background: var(--state-active);
+  color: var(--text-primary);
+}
+
+/* ── Delete folder dialog overlay ─────────────────────────── */
+.dialogOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialogBox {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  width: 340px;
+  max-width: 90vw;
+  box-shadow: var(--shadow-modal);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dialogTitle {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+.dialogBody {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.dialogCancelBtn {
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-medium);
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  background: var(--bg-app);
+}
+.dialogCancelBtn:hover { background: var(--state-hover); }
+.dialogDeleteBtn {
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  background: var(--danger-color);
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.dialogDeleteBtn:hover { background: #dc2626; }
