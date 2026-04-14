@@ -1,6 +1,27 @@
+/* ── Animated section (archived) ──────────────────────────── */
+.animatedSection {
+  overflow: hidden;
+  animation: slideDown 0.22s ease;
+  transform-origin: top;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    max-height: 2000px;
+    transform: translateY(0);
+  }
+}
+
 /* ── Sidebar shell ─────────────────────────────────────────── */
 .sidebar {
-  width: 260px;
+  width: 100%;       /* fill the wrapper — width is controlled by App.tsx */
+  height: 100%;      /* fill full available height */
   background-color: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
@@ -9,8 +30,43 @@
   overflow: hidden;
 }
 
-/* ── Top row: New Chat + Select ───────────────────────────── */
-.topRow {
+/* ── Branding Row ────────────────────────────────────────────── */
+.brandingRow {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 4px 6px;
+}
+
+.brandLogoOnly {
+  height: 26px; /* Optimized for standard UI height */
+  width: auto;
+  object-fit: contain;
+  transition: opacity 0.2s ease;
+}
+
+.brandFull {
+  height: 24px; /* Distinct text line height */
+  width: auto;
+  object-fit: contain;
+}
+
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+}
+.collapseBtn:hover {
+  background-color: var(--state-hover);
+  color: var(--text-primary);
+}
+
+/* ── Primary Actions ───────────────────────────────────────── */
+.primaryActionsRow {
   display: flex;
   gap: 6px;
   margin-bottom: 12px;
@@ -127,14 +183,45 @@
 }
 
 .folderChildren {
-  padding-left: 10px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+  border-left: 2px solid var(--state-active);
+  margin-left: 18px;
+}
+
+/* ── Default "Chats" root section heading ──────────────────── */
+.chatsHeading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  user-select: none;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s;
+}
+.chatsHeading:hover {
+  background-color: var(--state-hover);
+  color: var(--text-primary);
+}
+
+/* ── Chats section children (no indent — root level) ──────── */
+.chatsChildren {
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin-top: 2px;
 }
 
-/* ── No Folder section heading ─────────────────────────────── */
+/* ── No Folder section heading (kept for compat) ───────────── */
 .noFolderHeading {
   display: flex;
   align-items: center;

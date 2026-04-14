@@ -89,18 +89,10 @@ export default function SettingsModal() {
     }
   };
 
-  const handleThemeChange = (themeId: string) => {
-    setForm({ ...form, app_theme: themeId });
-    // Quick preview
-    const classes = document.documentElement.classList;
-    const toRemove: string[] = [];
-    classes.forEach(c => { 
-      if (c.startsWith('theme-') || c === 'dark' || c.startsWith('accent-')) {
-        toRemove.push(c); 
-      } 
-    });
-    toRemove.forEach(c => classes.remove(c));
-    classes.add(`theme-${themeId}`);
+  const handleThemeChange = async (themeId: string) => {
+    const newForm = { ...form, app_theme: themeId };
+    setForm(newForm);
+    await updateSettings(newForm);
   };
 
   // ── Preset editor ─────────────────────────────────────────────────

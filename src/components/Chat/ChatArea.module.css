@@ -1,3 +1,4 @@
+/* ─── Chat area shell ─── */
 .chatArea {
   display: flex;
   flex-direction: column;
@@ -6,8 +7,36 @@
   min-height: 0;
 }
 
+/* ─── Empty state (no active chat) — fills full height ─── */
+.chatAreaEmpty {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+}
+.emptyStateContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  padding: 20px;
+  text-align: center;
+}
+.emptyStateContent h2 {
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  font-size: 1.5rem;
+}
+.emptyStateContent p {
+  font-size: 0.95rem;
+}
+
+/* ─── Header ─── */
 .header {
-  min-height: 60px;
+  min-height: 56px;
   border-bottom: 1px solid var(--border-medium);
   display: flex;
   align-items: center;
@@ -20,69 +49,23 @@
 
 .headerLeft {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   flex: 1;
 }
 
 .title {
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: 1rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.presetBadge {
-  display: flex;
-  align-items: center;
-}
-
-.presetLocked {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  padding: 2px 8px 2px 6px;
-  border-radius: 10px;
-  background: var(--state-hover);
-}
-
-.presetSelector {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.presetSelect {
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  border: 1px solid var(--border-medium);
-  border-radius: 10px;
-  padding: 2px 22px 2px 8px;
-  font-size: 0.75rem;
-  color: var(--accent-base);
-  cursor: pointer;
-  outline: none;
-  font-family: inherit;
-}
-.presetSelect:focus {
-  border-color: var(--accent-base);
-}
-
-.presetSelectIcon {
-  position: absolute;
-  right: 6px;
-  pointer-events: none;
-  color: var(--accent-base);
-}
-
 .headerActions {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -103,6 +86,10 @@
   padding: 20px 0;
   display: flex;
   flex-direction: column;
+  
+  /* Gradual fade at the bottom to elegantly dissolve messages before the composer */
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 24px), transparent 100%);
 }
 
 .emptyState {
@@ -121,44 +108,27 @@
 /* ─── Message Rows ─── */
 .messageRow {
   padding: 12px 20px;
-}
-
-/* User row: right-aligned */
-.messageRow.user {
-  display: flex;
-  justify-content: flex-end;
-}
-
-/* Assistant row: left-aligned, full width for readability */
-.messageRow.assistant {
   display: flex;
   justify-content: center;
+  width: 100%;
 }
 
-/* ─── MessageContent wrappers ─── */
 .messageContent {
   display: flex;
   gap: 14px;
   max-width: 800px;
   width: 100%;
 }
-
-.userContent {
-  justify-content: flex-end;
-}
-
-.assistantContent {
-  justify-content: flex-start;
-}
+.userContent  { justify-content: flex-end; }
+.assistantContent { justify-content: flex-start; }
 
 /* ─── User Bubble ─── */
 .userBubbleWrap {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  max-width: 75%;
+  max-width: 70%;
 }
-
 .userBubble {
   background-color: var(--accent-base);
   color: white;
@@ -202,62 +172,118 @@
   flex-shrink: 0;
   margin-top: 2px;
 }
-.avatar.user {
-  background-color: var(--accent-base);
-  color: white;
-}
-.avatar.assistant {
-  background-color: var(--border-medium);
-  color: var(--text-primary);
-}
+.avatar.user      { background-color: var(--accent-base); color: white; }
+.avatar.assistant { background-color: var(--border-medium); color: var(--text-primary); }
 
 /* ─── Composer ─── */
 .composer {
-  padding: 20px;
-  background-color: var(--bg-app);
-  border-top: 1px solid var(--border-medium);
+  padding: 0 20px 20px;
+  background-color: transparent;
   flex-shrink: 0;
+  border-top: none;
 }
 
 .composerInner {
   max-width: 800px;
   margin: 0 auto;
-  position: relative;
-  display: flex;
-  background-color: var(--bg-user-bubble);
+  background-color: var(--bg-composer, var(--bg-user-bubble));
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
-  padding: 10px;
+  padding: 10px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  
+  /* Enforce true rounded edges, masking any child content that overlaps the corners */
+  overflow: hidden;
+  /* Fix Safari border-radius clipping bug */
+  -webkit-transform: translateZ(0);
 }
 
 .composerInput {
-  flex: 1;
+  width: 100%;
   border: none;
   background: transparent;
   resize: none;
-  height: 24px;
-  max-height: 200px;
   outline: none;
-  padding: 0 10px;
+  padding: 0 8px;
   font-size: 1rem;
   color: var(--text-primary);
+  line-height: 1.5;
+  /* height is controlled dynamically via JS auto-grow */
+  min-height: 24px;
+  overflow-y: hidden;
+}
+.composerInput:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ─── Composer footer row: preset + send ─── */
+.composerFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 6px;
+}
+
+.composerLeft {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Preset selector in composer */
+.presetSelectorComposer {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.presetSelectComposer {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  border-radius: 10px;
+  padding: 2px 22px 2px 8px;
+  font-size: 0.73rem;
+  color: var(--accent-base);
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  max-width: 200px;
+}
+.presetSelectComposer:focus { border-color: var(--accent-base); }
+.presetSelectIconComposer {
+  position: absolute;
+  right: 6px;
+  pointer-events: none;
+  color: var(--accent-base);
+}
+.presetLockedComposer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 2px 8px 2px 6px;
+  border-radius: 10px;
+  background: var(--state-hover);
 }
 
 .sendBtn {
   color: var(--accent-base);
-  padding: 0 10px;
+  padding: 4px 6px;
   display: flex;
   align-items: center;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
 }
 .sendBtn:disabled {
   color: var(--text-muted);
   cursor: not-allowed;
 }
-
-.composerInput:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.sendBtn:not(:disabled):hover {
+  background: var(--state-hover);
 }
 
 /* ─── Error Banner ─── */
@@ -272,7 +298,6 @@
   font-size: 0.85rem;
   flex-shrink: 0;
 }
-
 .errorDismiss {
   all: unset;
   cursor: pointer;
@@ -289,7 +314,6 @@
   gap: 4px;
   padding: 8px 0;
 }
-
 .dot {
   width: 8px;
   height: 8px;
@@ -297,24 +321,11 @@
   background-color: var(--text-muted);
   animation: bounce 1.4s infinite ease-in-out both;
 }
-
-.dot:nth-child(1) {
-  animation-delay: 0s;
-}
-.dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-.dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
+.dot:nth-child(1) { animation-delay: 0s; }
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes bounce {
-  0%, 80%, 100% {
-    transform: scale(0.6);
-    opacity: 0.4;
-  }
-  40% {
-    transform: scale(1);
-    opacity: 1;
-  }
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40%            { transform: scale(1);   opacity: 1;   }
 }

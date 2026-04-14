@@ -296,6 +296,8 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-medium) transparent;
 }
 
 body {
@@ -320,5 +322,16 @@ button {
 input, textarea {
   font-family: inherit;
   color: inherit;
+}
+
+/* ─── Global Scrollbar Styling ─── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 

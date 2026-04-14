@@ -5,10 +5,23 @@ import type { Chat, Folder } from '../../types';
 import {
   Plus, FolderPlus, Archive, Settings as SettingsIcon,
   ChevronRight, MoreHorizontal, Check, X, Folder as FolderIcon,
-  FolderOpen, Pencil, Trash2,
+  FolderOpen, Pencil, Trash2, PanelLeftClose,
 } from 'lucide-react';
 import * as ipc from '../../lib/ipc';
 import styles from './Sidebar.module.css';
+
+import darkLogo from '../../assets/darkLogo.png';
+import lightLogo from '../../assets/lightLogo.png';
+import darkFull from '../../assets/darkFull.png';
+import lightFull from '../../assets/lightFull.png';
+
+const DARK_SIDEBAR_THEMES = [
+  'cubiq-dark',
+  'midnight-violet',
+  'ocean-glass',
+  'rose-noir',
+  'amber-terminal'
+];
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -32,7 +45,8 @@ interface DeleteFolderDialog {
 // Sidebar
 // ─────────────────────────────────────────────────────────────────────
 
-export default function Sidebar() {
+export default function Sidebar({ onCollapse, isCollapsed = false }: { onCollapse: () => void, isCollapsed?: boolean }) {
+  const appTheme     = useAppStore(s => s.settings?.app_theme || 'cubiq-dark');
   const chats        = useAppStore(s => s.chats);
   const folders      = useAppStore(s => s.folders);
   const activeChatId = useAppStore(s => s.activeChatId);
@@ -52,7 +66,7 @@ export default function Sidebar() {
 
   // ── local UI state ──────────────────────────────────────────────
   const [collapsedFolders, setCollapsedFolders] = useState<Set<number>>(new Set());
-  const [noFolderCollapsed, setNoFolderCollapsed] = useState(false);
+  const [chatsCollapsed, setChatsCollapsed] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingChatId, setRenamingChatId]   = useState<number | null>(null);
   const [renameValue, setRenameValue]           = useState('');
@@ -158,6 +172,13 @@ export default function Sidebar() {
     const chatId = contextMenu.chat.id!;
     closeMenu();
     await moveChatToFolder(chatId, folderId);
+  };
+
+  const ctxRemoveFromFolder = async () => {
+    if (!contextMenu) return;
+    const chatId = contextMenu.chat.id!;
+    closeMenu();
+    await moveChatToFolder(chatId, null);
   };
 
   // ─── Chat rename (inline) ────────────────────────────────────────
@@ -281,30 +302,56 @@ export default function Sidebar() {
     );
   };
 
+  const isDarkTheme = DARK_SIDEBAR_THEMES.includes(appTheme);
+  const family = isDarkTheme ? 'light' : 'dark';
+  const brandingSrc = isCollapsed
+    ? (family === 'light' ? lightLogo : darkLogo)
+    : (family === 'light' ? lightFull : darkFull);
+
   // ─────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────
   return (
     <div className={styles.sidebar}>
 
-      {/* ── Top row: New Chat + New Folder ── */}
-      <div className={styles.topRow}>
-        <button className={styles.newChatBtn} onClick={createChatSafe}>
-          <Plus size={16} />
-          New chat
-        </button>
-        <button
-          className={styles.newFolderBtn}
-          title="New folder"
-          onClick={() => setCreatingFolder(true)}
-        >
-          <FolderPlus size={16} />
-        </button>
+      {/* ── Branding & Header Row ── */}
+      <div className={styles.brandingRow} style={{ justifyContent: isCollapsed ? 'center' : 'space-between', marginBottom: isCollapsed ? '0' : '16px' }}>
+        <img 
+          src={brandingSrc} 
+          alt="Cubiq Logo" 
+          className={isCollapsed ? styles.brandLogoOnly : styles.brandFull} 
+        />
+        {!isCollapsed && (
+          <button
+            className={styles.collapseBtn}
+            title="Collapse sidebar"
+            onClick={onCollapse}
+          >
+            <PanelLeftClose size={16} />
+          </button>
+        )}
       </div>
 
-      {/* ── New folder input row ── */}
-      {creatingFolder && (
-        <div className={styles.newFolderRow}>
+      {!isCollapsed && (
+        <>
+          {/* ── Primary Actions Row ── */}
+          <div className={styles.primaryActionsRow}>
+            <button className={styles.newChatBtn} onClick={createChatSafe}>
+              <Plus size={16} />
+              New chat
+            </button>
+            <button
+              className={styles.newFolderBtn}
+              title="New folder"
+              onClick={() => setCreatingFolder(true)}
+            >
+              <FolderPlus size={16} />
+            </button>
+          </div>
+
+          {/* ── New folder input row ── */}
+          {creatingFolder && (
+            <div className={styles.newFolderRow}>
           <FolderIcon size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
           <input
             ref={newFolderInputRef}
@@ -328,14 +375,16 @@ export default function Sidebar() {
       <div className={styles.chatList}>
 
         {showArchived ? (
-          /* ── Archived view: flat list ── */
-          visibleChats.length === 0 ? (
-            <div style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              No archived chats
-            </div>
-          ) : (
-            visibleChats.map(renderChatItem)
-          )
+          /* ── Archived view: flat list with slide-in animation ── */
+          <div key="archived" className={styles.animatedSection}>
+            {visibleChats.length === 0 ? (
+              <div style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                No archived chats
+              </div>
+            ) : (
+              visibleChats.map(renderChatItem)
+            )}
+          </div>
         ) : (
           /* ── Active view: folder groups + ungrouped ── */
           <>
@@ -349,6 +398,7 @@ export default function Sidebar() {
                   <div
                     className={styles.folderHeader}
                     onClick={() => !isRenamingF && toggleFolder(folder.id)}
+                    onContextMenu={e => openFolderMenu(e, folder)}
                   >
                     <ChevronRight
                       size={12}
@@ -400,40 +450,35 @@ export default function Sidebar() {
               );
             })}
 
-            {/* ── No Folder / Uncategorized section ── */}
-            {ungrouped.length > 0 && (
-              <div className={styles.folderSection}>
-                {folders.length > 0 && (
-                  <div
-                    className={styles.noFolderHeading}
-                    onClick={() => setNoFolderCollapsed(p => !p)}
-                  >
-                    <ChevronRight
-                      size={12}
-                      className={`${styles.folderChevron} ${!noFolderCollapsed ? styles.folderChevronOpen : ''}`}
-                    />
-                    <span>No Folder</span>
-                    <span className={styles.folderCount}>{ungrouped.length}</span>
-                  </div>
-                )}
-                {!noFolderCollapsed && (
-                  <div className={folders.length > 0 ? styles.folderChildren : undefined}>
-                    {ungrouped.map(renderChatItem)}
-                  </div>
-                )}
+            {/* ── Default "Chats" root section (always visible) ── */}
+            <div className={styles.folderSection}>
+              <div
+                className={styles.chatsHeading}
+                onClick={() => setChatsCollapsed(p => !p)}
+              >
+                <ChevronRight
+                  size={12}
+                  className={`${styles.folderChevron} ${!chatsCollapsed ? styles.folderChevronOpen : ''}`}
+                />
+                <span>Chats</span>
+                <span className={styles.folderCount}>{ungrouped.length}</span>
               </div>
-            )}
-
-            {visibleChats.length === 0 && (
-              <div style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                No active chats
-              </div>
-            )}
+              {!chatsCollapsed && (
+                <div className={styles.chatsChildren}>
+                  {ungrouped.length === 0 ? (
+                    <div style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      No chats yet
+                    </div>
+                  ) : (
+                    ungrouped.map(renderChatItem)
+                  )}
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
 
-      {/* ── Bottom actions ── */}
       <div className={styles.bottomActions}>
         <button
           className={styles.actionBtn}
@@ -447,6 +492,7 @@ export default function Sidebar() {
           Settings
         </button>
       </div>
+      </>)}
 
       {/* ═══════════════════════════════════════════════════════════
           Context Menu Portal
@@ -466,6 +512,16 @@ export default function Sidebar() {
           <button className={styles.contextMenuItem} onClick={ctxArchive}>
             <Archive size={14} /> {contextMenu.chat.archived ? 'Unarchive' : 'Archive'}
           </button>
+
+          {/* Remove from folder (only if chat is inside a folder) */}
+          {!showArchived && contextMenu.chat.folder_id != null && (() => {
+            const folder = folders.find(f => f.id === contextMenu.chat.folder_id);
+            return (
+              <button className={styles.contextMenuItem} onClick={ctxRemoveFromFolder}>
+                <X size={14} /> Remove from {folder?.name ?? 'Folder'}
+              </button>
+            );
+          })()}
 
           {/* Move to Folder (only in active view) */}
           {!showArchived && (
@@ -499,7 +555,7 @@ export default function Sidebar() {
           style={{ top: contextMenu.subMenuY, left: contextMenu.subMenuX }}
         >
           <button className={styles.contextMenuSubItem} onClick={() => ctxMoveToFolder(null)}>
-            <X size={13} /> No Folder
+            <X size={13} /> Chats (default)
           </button>
           {folders.map(f => (
             <button
@@ -564,7 +620,7 @@ export default function Sidebar() {
                 <>
                   <strong>{deleteFolderDialog.chatCount}</strong>{' '}
                   {deleteFolderDialog.chatCount === 1 ? 'chat' : 'chats'} will be moved to{' '}
-                  <strong>No Folder</strong>. No chats will be deleted.
+                  <strong>Chats</strong>. No chats will be deleted.
                 </>
               ) : (
                 'This folder is empty. It will be removed.'
