@@ -141,6 +141,16 @@
   outline: none;
 }
 
+/* Hide native browser password reveal/clear icons */
+.inputWithToggle::-ms-reveal,
+.inputWithToggle::-ms-clear,
+.inputWithToggle::-webkit-contacts-auto-fill-button,
+.inputWithToggle::-webkit-credentials-auto-fill-button {
+  display: none !important;
+  width: 0;
+  height: 0;
+}
+
 .eyeToggle {
   all: unset;
   position: absolute;
@@ -389,25 +399,7 @@
   height: 16px;
 }
 
-/* ── Footer ─── */
-.footer {
-  padding: 15px 20px;
-  border-top: 1px solid var(--border-medium);
-  display: flex;
-  justify-content: flex-end;
-  background-color: var(--bg-app);
-  flex-shrink: 0;
-}
-.saveBtn {
-  background-color: var(--accent-base);
-  color: white;
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
-  font-weight: 500;
-}
-.saveBtn:hover {
-  background-color: var(--accent-hover);
-}
+/* ── (footer removed — settings auto-save) ─── */
 
 /* ── Test Connection ─── */
 .testRow {

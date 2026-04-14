@@ -51,6 +51,37 @@
   object-fit: contain;
 }
 
+/* ── Collapsed brand hover wrap ─────────────────────────────── */
+.collapsedBrandWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+}
+
+.collapsedBrandWrap .brandLogoOnly {
+  position: absolute;
+  transition: opacity 0.2s ease;
+}
+
+.expandSidebarBtn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background: var(--state-hover);
+  transition: opacity 0.2s ease, background-color 0.15s;
+}
+.expandSidebarBtn:hover {
+  background: var(--state-active);
+}
+
 .collapseBtn {
   display: flex;
   align-items: center;

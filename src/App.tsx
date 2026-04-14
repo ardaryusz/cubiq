@@ -77,9 +77,10 @@ function App() {
         className={styles.sidebarWrapper}
         style={{ width: effectiveWidth }}
       >
-        <Sidebar 
-          isCollapsed={collapsed} 
-          onCollapse={() => setCollapsed(true)} 
+        <Sidebar
+          isCollapsed={collapsed}
+          onCollapse={() => setCollapsed(true)}
+          onExpand={() => setCollapsed(false)}
         />
       </div>
 

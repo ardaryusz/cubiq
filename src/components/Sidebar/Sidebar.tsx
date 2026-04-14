@@ -5,7 +5,7 @@ import type { Chat, Folder } from '../../types';
 import {
   Plus, FolderPlus, Archive, Settings as SettingsIcon,
   ChevronRight, MoreHorizontal, Check, X, Folder as FolderIcon,
-  FolderOpen, Pencil, Trash2, PanelLeftClose,
+  FolderOpen, Pencil, Trash2, PanelLeftClose, PanelRightOpen,
 } from 'lucide-react';
 import * as ipc from '../../lib/ipc';
 import styles from './Sidebar.module.css';
@@ -45,7 +45,7 @@ interface DeleteFolderDialog {
 // Sidebar
 // ─────────────────────────────────────────────────────────────────────
 
-export default function Sidebar({ onCollapse, isCollapsed = false }: { onCollapse: () => void, isCollapsed?: boolean }) {
+export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: { onCollapse: () => void, onExpand: () => void, isCollapsed?: boolean }) {
   const appTheme     = useAppStore(s => s.settings?.app_theme || 'cubiq-dark');
   const chats        = useAppStore(s => s.chats);
   const folders      = useAppStore(s => s.folders);
@@ -73,6 +73,7 @@ export default function Sidebar({ onCollapse, isCollapsed = false }: { onCollaps
   const [renamingFolderId, setRenamingFolderId] = useState<number | null>(null);
   const [folderRenameValue, setFolderRenameValue] = useState('');
   const [creatingFolder, setCreatingFolder]     = useState(false);
+  const [brandingHovered, setBrandingHovered]   = useState(false);
   const [newFolderName, setNewFolderName]       = useState('');
   const [deleteFolderDialog, setDeleteFolderDialog] = useState<DeleteFolderDialog | null>(null);
 
@@ -315,20 +316,40 @@ export default function Sidebar({ onCollapse, isCollapsed = false }: { onCollaps
     <div className={styles.sidebar}>
 
       {/* ── Branding & Header Row ── */}
-      <div className={styles.brandingRow} style={{ justifyContent: isCollapsed ? 'center' : 'space-between', marginBottom: isCollapsed ? '0' : '16px' }}>
-        <img 
-          src={brandingSrc} 
-          alt="Cubiq Logo" 
-          className={isCollapsed ? styles.brandLogoOnly : styles.brandFull} 
-        />
-        {!isCollapsed && (
-          <button
-            className={styles.collapseBtn}
-            title="Collapse sidebar"
-            onClick={onCollapse}
-          >
-            <PanelLeftClose size={16} />
-          </button>
+      <div
+        className={styles.brandingRow}
+        style={{ justifyContent: isCollapsed ? 'center' : 'space-between', marginBottom: isCollapsed ? '0' : '16px' }}
+        onMouseEnter={() => isCollapsed && setBrandingHovered(true)}
+        onMouseLeave={() => setBrandingHovered(false)}
+      >
+        {isCollapsed ? (
+          <div className={styles.collapsedBrandWrap}>
+            <img
+              src={brandingSrc}
+              alt="Cubiq Logo"
+              className={styles.brandLogoOnly}
+              style={{ opacity: brandingHovered ? 0 : 1 }}
+            />
+            <button
+              className={styles.expandSidebarBtn}
+              title="Open sidebar"
+              onClick={onExpand}
+              style={{ opacity: brandingHovered ? 1 : 0, pointerEvents: brandingHovered ? 'auto' : 'none' }}
+            >
+              <PanelRightOpen size={18} />
+            </button>
+          </div>
+        ) : (
+          <>
+            <img src={brandingSrc} alt="Cubiq Logo" className={styles.brandFull} />
+            <button
+              className={styles.collapseBtn}
+              title="Collapse sidebar"
+              onClick={onCollapse}
+            >
+              <PanelLeftClose size={16} />
+            </button>
+          </>
         )}
       </div>
 

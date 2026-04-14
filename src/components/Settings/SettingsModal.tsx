@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAppStore } from '../../store';
 import type { Settings as SettingsType, Preset } from '../../types';
 import { X, Eye, EyeOff, Wifi, CheckCircle, XCircle, Loader2, Plus, Copy, Trash2, Edit2, Download, Upload, ArrowLeft } from 'lucide-react';
@@ -31,7 +31,7 @@ type View = 'main' | 'editPreset' | 'viewPreset';
 type Tab = 'appearance' | 'api' | 'presets';
 
 interface PresetEditorState {
-  id: number | null;          // null = creating new
+  id: number | null;
   name: string;
   modelUrl: string;
   modelName: string;
@@ -53,6 +53,8 @@ export default function SettingsModal() {
   const importPresets = useAppStore(state => state.importPresets);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Debounce timer for text inputs
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [form, setForm] = useState<SettingsType>({
     theme: settings?.theme ?? 'system',
@@ -71,11 +73,42 @@ export default function SettingsModal() {
   const [view, setView] = useState<View>('main');
   const [editor, setEditor] = useState<PresetEditorState | null>(null);
 
-  const handleSave = () => {
-    updateSettings(form);
-    setSettingsOpen(false);
+  // ── Auto-save helpers ──────────────────────────────────────────────
+
+  /** Immediately persist a partial settings patch. */
+  const savePatch = useCallback((patch: Partial<SettingsType>) => {
+    const merged = { ...form, ...patch };
+    setForm(merged);
+    updateSettings(merged);
+  }, [form, updateSettings]);
+
+  /** Persist full current form (used on blur). */
+  const saveNow = useCallback((currentForm: SettingsType) => {
+    updateSettings(currentForm);
+  }, [updateSettings]);
+
+  /** For text inputs: update local state immediately; debounce the persist. */
+  const handleTextChange = useCallback((patch: Partial<SettingsType>) => {
+    const merged = { ...form, ...patch };
+    setForm(merged);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => saveNow(merged), 400);
+  }, [form, saveNow]);
+
+  // Clean up debounce on unmount
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
+
+  // ── Theme (immediate apply + persist) ─────────────────────────────
+  const handleThemeChange = async (themeId: string) => {
+    savePatch({ app_theme: themeId });
   };
 
+  // ── Preset actions save (instant) ─────────────────────────────────
+  const handlePresetSelectChange = (value: string) => {
+    savePatch({ selected_preset_id: value ? Number(value) : undefined });
+  };
+
+  // ── Test connection ────────────────────────────────────────────────
   const handleTestConnection = async () => {
     setTestStatus('testing');
     setTestMessage('');
@@ -87,12 +120,6 @@ export default function SettingsModal() {
       setTestStatus('error');
       setTestMessage(String(e));
     }
-  };
-
-  const handleThemeChange = async (themeId: string) => {
-    const newForm = { ...form, app_theme: themeId };
-    setForm(newForm);
-    await updateSettings(newForm);
   };
 
   // ── Preset editor ─────────────────────────────────────────────────
@@ -143,7 +170,7 @@ export default function SettingsModal() {
     setEditor(null);
   };
 
-  // ── Native Export UX ─────────────────────────────────────────────────
+  // ── Native Export / Import ────────────────────────────────────────
   const handleExportAll = async () => {
     try {
       const path = await saveDialog({
@@ -194,7 +221,7 @@ export default function SettingsModal() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // ── Preset Editor & View Modal ────────────────────────────────────────────
+  // ── Preset Editor & View ──────────────────────────────────────────
   if ((view === 'editPreset' || view === 'viewPreset') && editor) {
     const isReadOnly = view === 'viewPreset';
     return (
@@ -238,7 +265,7 @@ export default function SettingsModal() {
                 <label htmlFor="custom-model-check">Custom model name override</label>
               </div>
             )}
-            
+
             {!isReadOnly && editor.useCustomModel && (
               <div className={styles.field}>
                 <input className={styles.input} value={editor.customModelName} onChange={e => setEditor({ ...editor, customModelName: e.target.value })} placeholder="custom-model-name" />
@@ -282,14 +309,14 @@ export default function SettingsModal() {
         </div>
 
         <div className={styles.content}>
-          
+
           {/* ── APPEARANCE TAB ─── */}
           {activeTab === 'appearance' && (
             <>
               <div className={styles.sectionTitle}>Theme Packs</div>
               <div className={styles.themeGrid}>
                 {FULL_THEMES.map(theme => (
-                  <button 
+                  <button
                     key={theme.id}
                     className={`${styles.themeCard} ${form.app_theme === theme.id ? styles.themeCardActive : ''}`}
                     onClick={() => handleThemeChange(theme.id)}
@@ -321,7 +348,8 @@ export default function SettingsModal() {
                     type={showApiKey ? 'text' : 'password'}
                     className={styles.inputWithToggle}
                     value={form.api_key}
-                    onChange={e => setForm({ ...form, api_key: e.target.value })}
+                    onChange={e => handleTextChange({ api_key: e.target.value })}
+                    onBlur={() => saveNow(form)}
                     placeholder="gsk_…"
                     autoComplete="off"
                     spellCheck={false}
@@ -332,6 +360,30 @@ export default function SettingsModal() {
                     {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+              </div>
+
+              <div className={styles.field}>
+                <label htmlFor="setting-model-url">Model URL</label>
+                <input
+                  id="setting-model-url"
+                  className={styles.input}
+                  value={form.model_url}
+                  onChange={e => handleTextChange({ model_url: e.target.value })}
+                  onBlur={() => saveNow(form)}
+                  placeholder="https://api.groq.com/openai/v1"
+                />
+              </div>
+
+              <div className={styles.field}>
+                <label htmlFor="setting-model-name">Default Model</label>
+                <select
+                  id="setting-model-name"
+                  className={styles.select}
+                  value={form.model_name}
+                  onChange={e => savePatch({ model_name: e.target.value })}
+                >
+                  {MODEL_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
               </div>
 
               <div className={styles.sectionTitle}>Test Connection</div>
@@ -359,7 +411,7 @@ export default function SettingsModal() {
               <div className={styles.sectionTitle}>Default System Preset</div>
               <div className={styles.field}>
                 <select className={styles.select} value={form.selected_preset_id ?? ''}
-                  onChange={e => setForm({ ...form, selected_preset_id: e.target.value ? Number(e.target.value) : undefined })}>
+                  onChange={e => handlePresetSelectChange(e.target.value)}>
                   <option value="">— None —</option>
                   {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -377,13 +429,10 @@ export default function SettingsModal() {
                       ) : (
                         <button className={styles.presetActionBtn} title="Edit" onClick={() => openEditOrViewPreset(p)}><Edit2 size={14} /></button>
                       )}
-                      
                       <button className={styles.presetActionBtn} title="Duplicate" onClick={() => p.id && duplicatePreset(p.id)}><Copy size={14} /></button>
-                      
                       {!p.is_builtin && (
                         <button className={styles.presetActionBtn} title="Export" onClick={() => p.id && handleExportOne(p.id)}><Download size={14} /></button>
                       )}
-                      
                       {!p.is_builtin && (
                         <button className={`${styles.presetActionBtn} ${styles.presetActionBtnDanger}`} title="Delete"
                           onClick={() => { if (p.id && confirm(`Delete "${p.name}"?`)) deletePreset(p.id); }}>
@@ -405,10 +454,7 @@ export default function SettingsModal() {
           )}
 
         </div>
-
-        <div className={styles.footer}>
-          <button className={styles.saveBtn} onClick={handleSave}>Save Settings</button>
-        </div>
+        {/* Footer removed — all settings auto-save */}
       </div>
     </div>
   );
