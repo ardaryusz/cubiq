@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Chat, Folder, Message, Settings, Preset } from '../types';
+import type { Chat, DeletedChat, Folder, Message, Settings, Preset } from '../types';
 
 // ── Settings ─────────────────────────────────────────────────────────
 export const getSettings = () => invoke<Settings>('get_settings');
@@ -87,3 +87,9 @@ export const bulkDeleteChats = (ids: number[]) =>
 
 export const bulkMoveChats = (ids: number[], folderId: number | null) =>
     invoke<void>('bulk_move_chats', { ids, folderId });
+
+// ── Trash ─────────────────────────────────────────────────────────────
+export const getDeletedChats = () => invoke<DeletedChat[]>('get_deleted_chats');
+export const restoreChats = (ids: number[]) => invoke<void>('restore_chats', { ids });
+export const deleteChatsPermananently = (ids: number[]) => invoke<void>('delete_chats_permanently', { ids });
+export const purgeExpiredDeletedChats = () => invoke<void>('purge_expired_deleted_chats');

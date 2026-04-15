@@ -112,6 +112,14 @@ pub fn init_db(app_dir: PathBuf) -> Result<Connection> {
         conn.pragma_update(None, "user_version", 3)?;
     }
 
+    if version < 4 {
+        migrate_v3_to_v4(&conn)?;
+        conn.pragma_update(None, "user_version", 4)?;
+    }
+
+    // Purge expired soft-deleted chats on every startup
+    purge_expired_deleted_chats(&conn)?;
+
     Ok(conn)
 }
 
@@ -251,5 +259,46 @@ fn migrate_v2_to_v3(conn: &Connection) -> Result<()> {
     )?;
 
     tx.commit()?;
+    Ok(())
+}
+
+/// Migration from v3 (folders) to v4 (soft-delete + trash retention).
+///
+/// - Adds `deleted_at` to `chats` (NULL = live, non-null = in trash).
+/// - Adds `trash_retention_days` to `settings` (default 7).
+fn migrate_v3_to_v4(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+
+    // 1. Soft-delete column on chats
+    tx.execute("ALTER TABLE chats ADD COLUMN deleted_at INTEGER", ())?;
+
+    // 2. Retention setting
+    tx.execute("ALTER TABLE settings ADD COLUMN trash_retention_days INTEGER NOT NULL DEFAULT 7", ())?;
+
+    tx.commit()?;
+    Ok(())
+}
+
+/// Permanently deletes chats whose `deleted_at` is older than `trash_retention_days`.
+/// Called on every app startup so the trash self-cleans.
+pub fn purge_expired_deleted_chats(conn: &Connection) -> Result<()> {
+    let retention_days: i64 = conn.query_row(
+        "SELECT trash_retention_days FROM settings WHERE id = 1",
+        (),
+        |r| r.get(0),
+    ).unwrap_or(7);
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    let cutoff_ms = now_ms - retention_days * 86_400_000;
+
+    conn.execute(
+        "DELETE FROM chats WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
+        [cutoff_ms],
+    )?;
+
     Ok(())
 }

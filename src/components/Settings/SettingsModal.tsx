@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAppStore } from '../../store';
-import type { Settings as SettingsType, Preset } from '../../types';
-import { X, Eye, EyeOff, Wifi, CheckCircle, XCircle, Loader2, Plus, Copy, Trash2, Edit2, Download, Upload, ArrowLeft } from 'lucide-react';
+import type { Settings as SettingsType, Preset, DeletedChat } from '../../types';
+import { X, Eye, EyeOff, Wifi, CheckCircle, XCircle, Loader2, Plus, Copy, Trash2, Edit2, Download, Upload, ArrowLeft, RotateCcw, Search, CheckSquare, Check } from 'lucide-react';
 import * as ipc from '../../lib/ipc';
 import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import styles from './SettingsModal.module.css';
@@ -28,7 +28,7 @@ const MODEL_OPTIONS = [
 ];
 
 type View = 'main' | 'editPreset' | 'viewPreset';
-type Tab = 'appearance' | 'api' | 'presets';
+type Tab = 'appearance' | 'api' | 'presets' | 'trash';
 
 interface PresetEditorState {
   id: number | null;
@@ -41,20 +41,38 @@ interface PresetEditorState {
   isBuiltin: boolean;
 }
 
+function formatCountdown(deletedAt: number, retentionDays: number, now: number): string {
+  const expiresAt = deletedAt + (retentionDays * 86400 * 1000);
+  const diff = expiresAt - now;
+
+  if (diff <= 0) return 'Deleting...';
+
+  const days = Math.floor(diff / (86400 * 1000));
+  const hours = Math.floor((diff % (86400 * 1000)) / (3600 * 1000));
+  const mins = Math.floor((diff % (3600 * 1000)) / (60 * 1000));
+
+  if (days > 0) return `Deletes in ${days}d ${hours}h`;
+  if (hours > 0) return `Deletes in ${hours}h ${mins}m`;
+  return `Deletes in ${mins}m`;
+}
+
 export default function SettingsModal() {
   const settings = useAppStore(state => state.settings);
-  const presets = useAppStore(state => state.presets);
-  const updateSettings = useAppStore(state => state.updateSettings);
-  const setSettingsOpen = useAppStore(state => state.setSettingsOpen);
-  const createPreset = useAppStore(state => state.createPreset);
-  const updatePreset = useAppStore(state => state.updatePreset);
-  const deletePreset = useAppStore(state => state.deletePreset);
-  const duplicatePreset = useAppStore(state => state.duplicatePreset);
-  const importPresets = useAppStore(state => state.importPresets);
+  const presets   = useAppStore(state => state.presets);
+  const deletedChats = useAppStore(state => state.deletedChats);
+  const updateSettings   = useAppStore(state => state.updateSettings);
+  const setSettingsOpen  = useAppStore(state => state.setSettingsOpen);
+  const createPreset     = useAppStore(state => state.createPreset);
+  const updatePreset     = useAppStore(state => state.updatePreset);
+  const deletePreset     = useAppStore(state => state.deletePreset);
+  const duplicatePreset  = useAppStore(state => state.duplicatePreset);
+  const importPresets    = useAppStore(state => state.importPresets);
+  const restoreChats     = useAppStore(state => state.restoreChats);
+  const deletePermanently = useAppStore(state => state.deletePermanently);
+  const purgeExpired     = useAppStore(state => state.purgeExpiredDeletedChats);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  // Debounce timer for text inputs
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef  = useRef<HTMLInputElement>(null);
+  const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [form, setForm] = useState<SettingsType>({
     theme: settings?.theme ?? 'system',
@@ -64,6 +82,7 @@ export default function SettingsModal() {
     model_url: settings?.model_url ?? 'https://api.groq.com/openai/v1',
     model_name: settings?.model_name ?? 'llama-3.3-70b-versatile',
     selected_preset_id: settings?.selected_preset_id,
+    trash_retention_days: settings?.trash_retention_days ?? 7,
   });
 
   const [activeTab, setActiveTab] = useState<Tab>('appearance');
@@ -73,21 +92,132 @@ export default function SettingsModal() {
   const [view, setView] = useState<View>('main');
   const [editor, setEditor] = useState<PresetEditorState | null>(null);
 
-  // ── Auto-save helpers ──────────────────────────────────────────────
+  // ── Local Ticker for countdowns ──────────────────────────────────
+  const [nowValue, setNowValue] = useState(Date.now());
 
-  /** Immediately persist a partial settings patch. */
+  // Trigger purge and refresh whenever Trash is selected OR Settings opens
+  useEffect(() => {
+    // We only trigger if tab is trash OR when we first mount (opens settings)
+    const runPurge = async () => {
+      await purgeExpired();
+      // If we are currently looking at trash, refresh the list too
+      if (activeTab === 'trash') {
+        useAppStore.getState().refreshDeletedChats();
+        useAppStore.getState().refreshFolders(); // for badge counts
+      }
+    };
+    runPurge();
+  }, [activeTab, purgeExpired]);
+
+  // Tick every 30s while Trash tab is active to update countdowns
+  useEffect(() => {
+    if (activeTab !== 'trash') return;
+    const interval = setInterval(() => {
+      setNowValue(Date.now());
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [activeTab]);
+
+  // ── Trash-specific state ──────────────────────────────────────────
+  const [trashSearch, setTrashSearch] = useState('');
+  const [trashSelectMode, setTrashSelectMode] = useState(false);
+  const [trashSelectedIds, setTrashSelectedIds] = useState<Set<number>>(new Set());
+  const [lastTrashSelectedId, setLastTrashSelectedId] = useState<number | null>(null);
+  const [permDeleteDialog, setPermDeleteDialog] = useState<{ ids: number[]; count: number } | null>(null);
+
+  const filteredDeleted: DeletedChat[] = deletedChats.filter(c =>
+    !trashSearch || c.title.toLowerCase().includes(trashSearch.toLowerCase())
+  );
+
+  // Exit trash select mode when tab changes
+  useEffect(() => {
+    if (activeTab !== 'trash') {
+      setTrashSelectMode(false);
+      setTrashSelectedIds(new Set());
+      setLastTrashSelectedId(null);
+      setTrashSearch('');
+    }
+  }, [activeTab]);
+
+  // ── Trash selection handlers ──────────────────────────────────────
+
+  const handleTrashRowClick = (e: React.MouseEvent, chat: DeletedChat) => {
+    const id = chat.id;
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setTrashSelectMode(true);
+      setTrashSelectedIds(prev => {
+        const next = new Set(prev);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return next;
+      });
+      setLastTrashSelectedId(id);
+      return;
+    }
+    if (e.shiftKey && trashSelectMode && lastTrashSelectedId !== null) {
+      e.preventDefault();
+      const ids = filteredDeleted.map(c => c.id);
+      const fromIdx = ids.indexOf(lastTrashSelectedId);
+      const toIdx   = ids.indexOf(id);
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const [lo, hi] = fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
+        const range = ids.slice(lo, hi + 1);
+        setTrashSelectedIds(prev => {
+          const next = new Set(prev);
+          range.forEach(rid => next.add(rid));
+          return next;
+        });
+      }
+      return;
+    }
+    if (trashSelectMode) {
+      setTrashSelectedIds(prev => {
+        const next = new Set(prev);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return next;
+      });
+      setLastTrashSelectedId(id);
+      return;
+    }
+    // Non-select-mode: single restore
+    // (no click-to-open for deleted chats; context actions are the buttons)
+  };
+
+  const exitTrashSelect = () => {
+    setTrashSelectMode(false);
+    setTrashSelectedIds(new Set());
+    setLastTrashSelectedId(null);
+  };
+
+  const handleBulkRestore = async () => {
+    const ids = Array.from(trashSelectedIds);
+    await restoreChats(ids);
+    exitTrashSelect();
+  };
+
+  const requestBulkPermDelete = () => {
+    setPermDeleteDialog({ ids: Array.from(trashSelectedIds), count: trashSelectedIds.size });
+  };
+
+  const confirmPermDelete = async () => {
+    if (!permDeleteDialog) return;
+    await deletePermanently(permDeleteDialog.ids);
+    setPermDeleteDialog(null);
+    exitTrashSelect();
+  };
+
+  // ── Auto-save helpers ─────────────────────────────────────────────
+
   const savePatch = useCallback((patch: Partial<SettingsType>) => {
     const merged = { ...form, ...patch };
     setForm(merged);
     updateSettings(merged);
   }, [form, updateSettings]);
 
-  /** Persist full current form (used on blur). */
   const saveNow = useCallback((currentForm: SettingsType) => {
     updateSettings(currentForm);
   }, [updateSettings]);
 
-  /** For text inputs: update local state immediately; debounce the persist. */
   const handleTextChange = useCallback((patch: Partial<SettingsType>) => {
     const merged = { ...form, ...patch };
     setForm(merged);
@@ -95,20 +225,18 @@ export default function SettingsModal() {
     debounceRef.current = setTimeout(() => saveNow(merged), 400);
   }, [form, saveNow]);
 
-  // Clean up debounce on unmount
   useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
 
-  // ── Theme (immediate apply + persist) ─────────────────────────────
+  // ── Theme ─────────────────────────────────────────────────────────
   const handleThemeChange = async (themeId: string) => {
     savePatch({ app_theme: themeId });
   };
 
-  // ── Preset actions save (instant) ─────────────────────────────────
   const handlePresetSelectChange = (value: string) => {
     savePatch({ selected_preset_id: value ? Number(value) : undefined });
   };
 
-  // ── Test connection ────────────────────────────────────────────────
+  // ── Test connection ───────────────────────────────────────────────
   const handleTestConnection = async () => {
     setTestStatus('testing');
     setTestMessage('');
@@ -305,6 +433,9 @@ export default function SettingsModal() {
             <div className={`${styles.tab} ${activeTab === 'appearance' ? styles.tabActive : ''}`} onClick={() => setActiveTab('appearance')}>Appearance</div>
             <div className={`${styles.tab} ${activeTab === 'api' ? styles.tabActive : ''}`} onClick={() => setActiveTab('api')}>API</div>
             <div className={`${styles.tab} ${activeTab === 'presets' ? styles.tabActive : ''}`} onClick={() => setActiveTab('presets')}>Presets</div>
+            <div className={`${styles.tab} ${activeTab === 'trash' ? styles.tabActive : ''}`} onClick={() => setActiveTab('trash')}>
+              Trash {deletedChats.length > 0 && <span className={styles.trashBadge}>{deletedChats.length}</span>}
+            </div>
           </div>
         </div>
 
@@ -453,8 +584,144 @@ export default function SettingsModal() {
             </>
           )}
 
+          {/* ── TRASH TAB ─── */}
+          {activeTab === 'trash' && (
+            <>
+              {/* Retention setting */}
+              <div className={styles.sectionTitle}>Retention Policy</div>
+              <div className={styles.field}>
+                <label htmlFor="trash-retention">Auto-delete after (days)</label>
+                <div className={styles.retentionRow}>
+                  <input
+                    id="trash-retention"
+                    type="number"
+                    min={1}
+                    max={365}
+                    className={styles.retentionInput}
+                    value={form.trash_retention_days}
+                    onChange={e => {
+                      const v = Math.max(1, Math.min(365, Number(e.target.value) || 7));
+                      savePatch({ trash_retention_days: v });
+                    }}
+                  />
+                  <span className={styles.retentionUnit}>days</span>
+                </div>
+              </div>
+
+              {/* Toolbar */}
+              <div className={styles.trashToolbar}>
+                <div className={styles.searchInputWrapper}>
+                  <Search size={13} className={styles.searchIcon} />
+                  <input
+                    className={styles.searchInput}
+                    placeholder="Filter trash…"
+                    value={trashSearch}
+                    onChange={e => setTrashSearch(e.target.value)}
+                  />
+                  {trashSearch && (
+                    <button className={styles.searchClearBtn} onClick={() => setTrashSearch('')}><X size={12} /></button>
+                  )}
+                </div>
+
+                <button
+                  className={`${styles.toolbarBtn} ${trashSelectMode ? styles.toolbarBtnActive : ''}`}
+                  onClick={() => trashSelectMode ? exitTrashSelect() : setTrashSelectMode(true)}
+                  title={trashSelectMode ? 'Exit select mode' : 'Select chats'}
+                >
+                  <CheckSquare size={14} /> Select
+                </button>
+              </div>
+
+              {/* Bulk action bar */}
+              {trashSelectMode && trashSelectedIds.size > 0 && (
+                <div className={styles.trashBulkBar}>
+                  <span className={styles.trashBulkCount}>{trashSelectedIds.size} selected</span>
+                  <button className={styles.trashBulkBtn} onClick={handleBulkRestore}>
+                    <RotateCcw size={13} /> Restore
+                  </button>
+                  <button
+                    className={`${styles.trashBulkBtn} ${styles.trashBulkBtnDanger}`}
+                    onClick={requestBulkPermDelete}
+                  >
+                    <Trash2 size={13} /> Delete permanently
+                  </button>
+                </div>
+              )}
+
+              {/* Trash list */}
+              <div className={styles.trashList}>
+                {filteredDeleted.length === 0 ? (
+                  <div className={styles.trashEmpty}>
+                    {trashSearch ? 'No matches in Trash.' : 'Trash is empty.'}
+                  </div>
+                ) : (
+                  filteredDeleted.map(chat => {
+                    const selected = trashSelectedIds.has(chat.id);
+                    return (
+                      <div
+                        key={chat.id}
+                        className={`${styles.trashItem} ${selected ? styles.trashItemSelected : ''}`}
+                        onClick={e => handleTrashRowClick(e, chat)}
+                      >
+                        {trashSelectMode && (
+                          <span className={`${styles.trashCheckbox} ${selected ? styles.trashCheckboxChecked : ''}`}>
+                            {selected && <Check size={11} />}
+                          </span>
+                        )}
+                        <span className={styles.trashItemTitle}>{chat.title}</span>
+                        <span className={styles.trashItemDate}>
+                          {formatCountdown(chat.deleted_at, form.trash_retention_days, nowValue)}
+                        </span>
+                        {!trashSelectMode && (
+                          <div className={styles.trashItemActions}>
+                            <button
+                              className={styles.trashActionBtn}
+                              title="Restore"
+                              onClick={e => { e.stopPropagation(); restoreChats([chat.id]); }}
+                            >
+                              <RotateCcw size={13} />
+                            </button>
+                            <button
+                              className={`${styles.trashActionBtn} ${styles.trashActionBtnDanger}`}
+                              title="Delete permanently"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setPermDeleteDialog({ ids: [chat.id], count: 1 });
+                              }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Permanent delete confirmation */}
+              {permDeleteDialog && (
+                <div className={styles.trashPermDialog}>
+                  <div className={styles.trashPermDialogBox}>
+                    <div className={styles.trashPermDialogTitle}>
+                      Permanently delete {permDeleteDialog.count} chat{permDeleteDialog.count > 1 ? 's' : ''}?
+                    </div>
+                    <div className={styles.trashPermDialogBody}>
+                      This cannot be undone. The chat{permDeleteDialog.count > 1 ? 's' : ''} and all their messages will be erased forever.
+                    </div>
+                    <div className={styles.trashPermDialogActions}>
+                      <button className={styles.editorCancelBtn} onClick={() => setPermDeleteDialog(null)}>Cancel</button>
+                      <button className={styles.trashPermDeleteBtn} onClick={confirmPermDelete}>
+                        Delete permanently
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
         </div>
-        {/* Footer removed — all settings auto-save */}
       </div>
     </div>
   );

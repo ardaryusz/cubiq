@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Chat, Folder, Settings, Preset } from '../types';
+import type { Chat, DeletedChat, Folder, Settings, Preset } from '../types';
 import * as ipc from '../lib/ipc';
 
 interface AppState {
@@ -7,6 +7,7 @@ interface AppState {
   settings: Settings | null;
   presets: Preset[];
   folders: Folder[];
+  deletedChats: DeletedChat[];
   activeChatId: number | null;
   draftPresetId: number | null;
   showArchived: boolean;
@@ -24,6 +25,7 @@ interface AppState {
   refreshChats: () => Promise<void>;
   refreshPresets: () => Promise<void>;
   refreshFolders: () => Promise<void>;
+  refreshDeletedChats: () => Promise<void>;
 
   // Chat CRUD
   createChat: (title: string) => Promise<number | null>;
@@ -57,6 +59,11 @@ interface AppState {
   bulkArchiveChats: (ids: number[], archived: boolean) => Promise<void>;
   bulkDeleteChats: (ids: number[]) => Promise<void>;
   bulkMoveChats: (ids: number[], folderId: number | null) => Promise<void>;
+
+  // Trash actions
+  restoreChats: (ids: number[]) => Promise<void>;
+  deletePermanently: (ids: number[]) => Promise<void>;
+  purgeExpiredDeletedChats: () => Promise<void>;
 }
 
 /** Apply the full app theme class to the document root. */
@@ -79,6 +86,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: null,
   presets: [],
   folders: [],
+  deletedChats: [],
   activeChatId: null,
   draftPresetId: null,
   showArchived: false,
@@ -89,11 +97,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialize: async () => {
     try {
       set({ isLoading: true, error: null });
-      const [settings, chats, presets, folders] = await Promise.all([
+      const [settings, chats, presets, folders, deletedChats] = await Promise.all([
         ipc.getSettings(),
         ipc.getChats(),
         ipc.getPresets(),
         ipc.getFolders(),
+        ipc.getDeletedChats(),
       ]);
 
       applyAppTheme(settings.app_theme);
@@ -101,7 +110,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         settings, 
         chats, 
         presets, 
-        folders, 
+        folders,
+        deletedChats,
         isLoading: false,
         draftPresetId: presets.length > 0 ? presets[0].id : null
       });
@@ -144,6 +154,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ folders });
     } catch (error) {
       console.error('Failed to load folders', error);
+    }
+  },
+
+  refreshDeletedChats: async () => {
+    try {
+      const deletedChats = await ipc.getDeletedChats();
+      set({ deletedChats });
+    } catch (error) {
+      console.error('Failed to load deleted chats', error);
     }
   },
 
@@ -217,6 +236,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await ipc.deleteChat(id);
       await get().refreshChats();
+      await get().refreshDeletedChats();
       if (get().activeChatId === id) {
         set({ activeChatId: null });
       }
@@ -378,6 +398,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await ipc.bulkDeleteChats(ids);
       await get().refreshChats();
+      await get().refreshDeletedChats();
       const active = get().activeChatId;
       if (active !== null && ids.includes(active)) {
         set({ activeChatId: null });
@@ -393,6 +414,35 @@ export const useAppStore = create<AppState>((set, get) => ({
       await Promise.all([get().refreshChats(), get().refreshFolders()]);
     } catch (error) {
       console.error('Failed to bulk move chats', error);
+    }
+  },
+
+  // ── Trash actions ───────────────────────────────────────────────────
+
+  restoreChats: async (ids) => {
+    try {
+      await ipc.restoreChats(ids);
+      await Promise.all([get().refreshChats(), get().refreshDeletedChats()]);
+    } catch (error) {
+      console.error('Failed to restore chats', error);
+    }
+  },
+
+  deletePermanently: async (ids) => {
+    try {
+      await ipc.deleteChatsPermananently(ids);
+      await get().refreshDeletedChats();
+    } catch (error) {
+      console.error('Failed to permanently delete chats', error);
+    }
+  },
+
+  purgeExpiredDeletedChats: async () => {
+    try {
+      await ipc.purgeExpiredDeletedChats();
+      await get().refreshDeletedChats();
+    } catch (error) {
+      console.error('Failed to purge expired chats', error);
     }
   },
 }));

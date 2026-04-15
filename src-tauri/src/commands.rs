@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 use std::sync::Mutex;
 use tauri::State;
-use crate::models::{Chat, Folder, Message, Preset, Settings, PresetExportItem, PresetExportFile};
+use crate::models::{Chat, DeletedChat, Folder, Message, Preset, Settings, PresetExportItem, PresetExportFile};
 
 /// Global Cubiq identity prompt, always prepended to every AI request.
 const CUBIQ_IDENTITY_PROMPT: &str = "You are Cubiq, the AI assistant inside the Cubiq desktop app. Identify yourself as Cubiq only when the user asks who you are. Do not identify yourself as ChatGPT, Meta AI, Claude, Gemini, or any other assistant brand. Do not mention your name in every response — only when directly asked.";
@@ -16,13 +16,13 @@ pub struct AppState {
 pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
     let db = state.db.lock().unwrap();
     let mut stmt = db.prepare(
-        "SELECT theme, accent_theme, api_key, model_url, model_name, selected_preset_id, app_theme
+        "SELECT theme, accent_theme, api_key, model_url, model_name, selected_preset_id, app_theme, trash_retention_days
          FROM settings WHERE id = 1"
     ).map_err(|e| e.to_string())?;
 
     let settings = stmt.query_row((), |row| {
-        // Handle migration case where app_theme might not be fully populated if read differently
         let app_theme: Result<String, _> = row.get(6);
+        let retention: Result<i64, _> = row.get(7);
         Ok(Settings {
             theme: row.get(0)?,
             accent_theme: row.get(1)?,
@@ -31,6 +31,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
             model_name: row.get(4)?,
             selected_preset_id: row.get(5)?,
             app_theme: app_theme.unwrap_or_else(|_| "cubiq-dark".to_string()),
+            trash_retention_days: retention.unwrap_or(7),
         })
     }).map_err(|e| e.to_string())?;
 
@@ -41,8 +42,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
 pub fn update_settings(settings: Settings, state: State<'_, AppState>) -> Result<(), String> {
     let db = state.db.lock().unwrap();
     db.execute(
-        "UPDATE settings SET theme = ?1, accent_theme = ?2, api_key = ?3, model_url = ?4, model_name = ?5, selected_preset_id = ?6, app_theme = ?7 WHERE id = 1",
-        (&settings.theme, &settings.accent_theme, &settings.api_key, &settings.model_url, &settings.model_name, &settings.selected_preset_id, &settings.app_theme),
+        "UPDATE settings SET theme = ?1, accent_theme = ?2, api_key = ?3, model_url = ?4, model_name = ?5, selected_preset_id = ?6, app_theme = ?7, trash_retention_days = ?8 WHERE id = 1",
+        (&settings.theme, &settings.accent_theme, &settings.api_key, &settings.model_url, &settings.model_name, &settings.selected_preset_id, &settings.app_theme, &settings.trash_retention_days),
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -417,8 +418,10 @@ pub fn get_chats(state: State<'_, AppState>) -> Result<Vec<Chat>, String> {
     let mut stmt = db.prepare(
         "SELECT id, title, created_at, updated_at, archived,
                 preset_id, preset_name_snapshot, model_url_snapshot, model_name_snapshot,
-                customization_snapshot, preset_locked, user_edited_title, folder_id
-         FROM chats ORDER BY updated_at DESC"
+                customization_snapshot, preset_locked, user_edited_title, folder_id, deleted_at
+         FROM chats
+         WHERE deleted_at IS NULL
+         ORDER BY updated_at DESC"
     ).map_err(|e| e.to_string())?;
 
     let chat_iter = stmt.query_map((), |row| {
@@ -436,6 +439,7 @@ pub fn get_chats(state: State<'_, AppState>) -> Result<Vec<Chat>, String> {
             preset_locked: row.get(10)?,
             user_edited_title: row.get(11)?,
             folder_id: row.get(12)?,
+            deleted_at: row.get(13)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -507,10 +511,16 @@ pub fn archive_chat(id: i64, archived: bool, state: State<'_, AppState>) -> Resu
     Ok(())
 }
 
+/// Soft-deletes a single chat by setting deleted_at = now.
+/// The chat disappears from normal lists; it lives in the Trash.
 #[tauri::command]
 pub fn delete_chat(id: i64, state: State<'_, AppState>) -> Result<(), String> {
     let db = state.db.lock().unwrap();
-    db.execute("DELETE FROM chats WHERE id = ?1", [&id]).map_err(|e| e.to_string())?;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    db.execute(
+        "UPDATE chats SET deleted_at = ?1 WHERE id = ?2",
+        [now, id],
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -773,7 +783,7 @@ pub async fn test_connection(
 
 // ── Folders ──────────────────────────────────────────────────────────
 
-/// Returns all folders ordered by position, with a live chat_count of non-archived chats.
+/// Returns all folders ordered by position, with a live chat_count of non-archived, non-deleted chats.
 #[tauri::command]
 pub fn get_folders(state: State<'_, AppState>) -> Result<Vec<Folder>, String> {
     let db = state.db.lock().unwrap();
@@ -781,7 +791,7 @@ pub fn get_folders(state: State<'_, AppState>) -> Result<Vec<Folder>, String> {
         "SELECT f.id, f.name, f.position, f.created_at, f.updated_at,
                 COUNT(c.id) as chat_count
          FROM folders f
-         LEFT JOIN chats c ON c.folder_id = f.id AND c.archived = 0
+         LEFT JOIN chats c ON c.folder_id = f.id AND c.archived = 0 AND c.deleted_at IS NULL
          GROUP BY f.id
          ORDER BY f.position ASC, f.name ASC"
     ).map_err(|e| e.to_string())?;
@@ -839,13 +849,13 @@ pub fn rename_folder(id: i64, name: String, state: State<'_, AppState>) -> Resul
     Ok(())
 }
 
-/// Returns the count of active (non-archived) chats in a folder.
+/// Returns the count of active (non-archived, non-deleted) chats in a folder.
 /// Used by the frontend before showing the deletion confirmation.
 #[tauri::command]
 pub fn get_folder_chat_count(folder_id: i64, state: State<'_, AppState>) -> Result<i64, String> {
     let db = state.db.lock().unwrap();
     let count: i64 = db.query_row(
-        "SELECT COUNT(*) FROM chats WHERE folder_id = ?1 AND archived = 0",
+        "SELECT COUNT(*) FROM chats WHERE folder_id = ?1 AND archived = 0 AND deleted_at IS NULL",
         [&folder_id],
         |r| r.get(0),
     ).map_err(|e| e.to_string())?;
@@ -896,8 +906,7 @@ pub fn move_chat_to_folder(chat_id: i64, folder_id: Option<i64>, state: State<'_
 
 // ── Find Empty Chat ───────────────────────────────────────────────────
 
-/// Returns the id of the first unlocked, unarchived, message-less "New Chat" if one exists.
-/// Used by the frontend to prevent creating multiple empty new chats.
+/// Returns the id of the first unlocked, unarchived, non-deleted, message-less "New Chat" if one exists.
 #[tauri::command]
 pub fn find_empty_chat(state: State<'_, AppState>) -> Result<Option<i64>, String> {
     let db = state.db.lock().unwrap();
@@ -905,6 +914,7 @@ pub fn find_empty_chat(state: State<'_, AppState>) -> Result<Option<i64>, String
         "SELECT id FROM chats
          WHERE title = 'New Chat'
            AND archived = 0
+           AND deleted_at IS NULL
            AND preset_locked = 0
            AND NOT EXISTS (
                SELECT 1 FROM messages WHERE messages.chat_id = chats.id
@@ -933,13 +943,16 @@ pub fn bulk_archive_chats(ids: Vec<i64>, archived: bool, state: State<'_, AppSta
     Ok(())
 }
 
-/// Permanently deletes multiple chats (cascades to messages).
+/// Soft-deletes multiple chats (moves them to Trash).
 #[tauri::command]
 pub fn bulk_delete_chats(ids: Vec<i64>, state: State<'_, AppState>) -> Result<(), String> {
     let db = state.db.lock().unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
     for id in &ids {
-        db.execute("DELETE FROM chats WHERE id = ?1", [id])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE chats SET deleted_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, id],
+        ).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -958,3 +971,62 @@ pub fn bulk_move_chats(ids: Vec<i64>, folder_id: Option<i64>, state: State<'_, A
     Ok(())
 }
 
+// ── Trash Commands ────────────────────────────────────────────────────
+
+/// Returns all soft-deleted chats, sorted by deleted_at DESC (most recently trashed first).
+#[tauri::command]
+pub fn get_deleted_chats(state: State<'_, AppState>) -> Result<Vec<DeletedChat>, String> {
+    let db = state.db.lock().unwrap();
+    let mut stmt = db.prepare(
+        "SELECT id, title, deleted_at, folder_id
+         FROM chats
+         WHERE deleted_at IS NOT NULL
+         ORDER BY deleted_at DESC"
+    ).map_err(|e| e.to_string())?;
+
+    let iter = stmt.query_map((), |row| {
+        Ok(DeletedChat {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            deleted_at: row.get(2)?,
+            folder_id: row.get(3)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut chats = Vec::new();
+    for c in iter {
+        chats.push(c.map_err(|e| e.to_string())?);
+    }
+    Ok(chats)
+}
+
+/// Restores one or more chats from Trash (sets deleted_at = NULL).
+#[tauri::command]
+pub fn restore_chats(ids: Vec<i64>, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+    for id in &ids {
+        db.execute(
+            "UPDATE chats SET deleted_at = NULL WHERE id = ?1",
+            [id],
+        ).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Permanently deletes one or more chats (with cascade to messages).
+#[tauri::command]
+pub fn delete_chats_permanently(ids: Vec<i64>, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+    for id in &ids {
+        db.execute("DELETE FROM chats WHERE id = ?1", [id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Runs the retention purge on demand (same logic as startup purge).
+#[tauri::command]
+pub fn purge_expired_deleted_chats(state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().unwrap();
+    crate::db::purge_expired_deleted_chats(&db).map_err(|e| e.to_string())
+}

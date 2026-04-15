@@ -63,6 +63,11 @@ pub fn run() {
         commands::bulk_archive_chats,
         commands::bulk_delete_chats,
         commands::bulk_move_chats,
+        // Phase B: Trash
+        commands::get_deleted_chats,
+        commands::restore_chats,
+        commands::delete_chats_permanently,
+        commands::purge_expired_deleted_chats,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

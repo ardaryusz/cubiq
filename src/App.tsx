@@ -31,6 +31,21 @@ function App() {
 
   useEffect(() => { initialize(); }, [initialize]);
 
+  // ── Global Ctrl+N shortcut: new draft chat ────────────────────
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        // Don't intercept when a text input/textarea is focused so typing 'n' is unaffected
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        e.preventDefault();
+        useAppStore.getState().setActiveChat(null);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   // Persist sidebar state
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_WIDTH, String(sidebarWidth));

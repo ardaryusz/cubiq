@@ -25,6 +25,16 @@ export interface Chat {
   user_edited_title: boolean;
   /** Folder this chat belongs to. undefined/null = No Folder (ungrouped). */
   folder_id?: number | null;
+  /** Timestamp when moved to Trash; null/undefined = live. */
+  deleted_at?: number | null;
+}
+
+/** Lightweight entry shown in the Trash list. */
+export interface DeletedChat {
+  id: number;
+  title: string;
+  deleted_at: number;
+  folder_id?: number | null;
 }
 
 export interface Message {
@@ -43,6 +53,7 @@ export interface Settings {
   model_url: string;
   model_name: string;
   selected_preset_id?: number;
+  trash_retention_days: number;
 }
 
 export interface Folder {

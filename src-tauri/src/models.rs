@@ -39,6 +39,17 @@ pub struct Chat {
     /// Folder this chat belongs to. NULL means ungrouped ("No Folder").
     /// Preserved even when the chat is archived so it returns to its folder on unarchive.
     pub folder_id: Option<i64>,
+    /// When this was moved to Trash. NULL = live chat.
+    pub deleted_at: Option<i64>,
+}
+
+/// Lightweight representation used in the Trash list (no heavy snapshot fields).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DeletedChat {
+    pub id: i64,
+    pub title: String,
+    pub deleted_at: i64,
+    pub folder_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -53,6 +64,8 @@ pub struct Settings {
     pub model_name: String,
     #[serde(default)]
     pub selected_preset_id: Option<i64>,
+    #[serde(default = "default_retention")]
+    pub trash_retention_days: i64,
 }
 
 fn default_app_theme() -> String {
@@ -62,6 +75,9 @@ fn default_app_theme() -> String {
 fn default_accent_theme() -> String {
     "emerald".to_string()
 }
+
+fn default_retention() -> i64 { 7 }
+
 
 /// A single preset in the export format (no id, no is_builtin, no API key).
 #[derive(Debug, Serialize, Deserialize, Clone)]
