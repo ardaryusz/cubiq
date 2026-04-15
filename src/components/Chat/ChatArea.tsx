@@ -20,6 +20,7 @@ function formatTimestamp(ms: number): string {
 
 export default function ChatArea() {
   const activeChatId   = useAppStore(state => state.activeChatId);
+  const draftPresetId  = useAppStore(state => state.draftPresetId);
   const chats          = useAppStore(state => state.chats);
   const presets        = useAppStore(state => state.presets);
   const renameChat     = useAppStore(state => state.renameChat);
@@ -28,7 +29,7 @@ export default function ChatArea() {
   const refreshChats   = useAppStore(state => state.refreshChats);
   const updateChatPreset = useAppStore(state => state.updateChatPreset);
   const lockChatPreset   = useAppStore(state => state.lockChatPreset);
-  const createChatSafe   = useAppStore(state => state.createChatSafe);
+  const startNewChat     = useAppStore(state => state.startNewChat);
 
   const [messages, setMessages]             = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -92,6 +93,10 @@ export default function ChatArea() {
       setSendError(null);
       setIsLoadingMessages(false);
     }
+    // We only reset input on actual chat switch, not when going to New Chat draft
+    // if the user wants to keep their draft text?
+    // Actually, user said: "Clicking New Chat... should not create anything... It should only switch UI to a draft/new chat state".
+    // I'll keep input reset for now to avoid confusion when clicking between chats.
     setInput('');
     setIsEditingTitle(false);
   }, [activeChatId, loadMessages]);
@@ -107,26 +112,38 @@ export default function ChatArea() {
     loadingForChatRef.current = chatId;
 
     try {
+      // 1. Snapshot the preset if not locked
       const chat = chats.find(c => c.id === chatId);
       if (chat && !chat.preset_locked) {
         await lockChatPreset(chatId);
       }
 
+      // 2. Add user message
       await ipc.addMessage(chatId, 'user', content);
-      const msgsAfterUser = await ipc.getMessages(chatId);
-      if (loadingForChatRef.current === chatId) setMessages(msgsAfterUser);
+      
+      // Update local state if we are still on this chat
+      if (loadingForChatRef.current === chatId) {
+        const msgs = await ipc.getMessages(chatId);
+        setMessages(msgs);
+      }
 
+      // 3. Trigger AI
       await ipc.sendChatMessage(chatId);
-      const msgsAfterAi = await ipc.getMessages(chatId);
-      if (loadingForChatRef.current === chatId) setMessages(msgsAfterAi);
+      
+      if (loadingForChatRef.current === chatId) {
+        const msgs = await ipc.getMessages(chatId);
+        setMessages(msgs);
+      }
 
       await refreshChats();
     } catch (e) {
       setSendError(`${String(e)}`);
-      try {
-        const msgs = await ipc.getMessages(chatId);
-        if (loadingForChatRef.current === chatId) setMessages(msgs);
-      } catch (_) {}
+      if (loadingForChatRef.current === chatId) {
+        try {
+          const msgs = await ipc.getMessages(chatId);
+          setMessages(msgs);
+        } catch (_) {}
+      }
     } finally {
       setIsSending(false);
       setTimeout(() => textareaRef.current?.focus(), 0);
@@ -142,8 +159,11 @@ export default function ChatArea() {
     if (activeChatId !== null && activeChatId !== undefined) {
       doSend(activeChatId, content);
     } else {
-      // Empty state: create a chat then send
-      const newId = await createChatSafe();
+      // Lazy Create: This is a draft chat.
+      await startNewChat();
+      // startNewChat has updated activeChatId in the store. 
+      // But we need to call doSend for the ACTUAL AI flow.
+      const newId = useAppStore.getState().activeChatId;
       if (newId) {
         doSend(newId, content);
       }
@@ -164,7 +184,27 @@ export default function ChatArea() {
 
   // ── Preset selector (shown in composer area) ─────────────────────────
   const renderPresetSelector = () => {
-    if (!activeChat) return null;
+    // If draft chat
+    if (!activeChatId || !activeChat) {
+      return (
+        <div className={styles.presetSelectorComposer}>
+          <select
+            className={styles.presetSelectComposer}
+            value={draftPresetId ?? ''}
+            onChange={e => {
+              const pid = Number(e.target.value);
+              useAppStore.setState({ draftPresetId: pid });
+            }}
+            title="Select preset for new chat"
+          >
+            {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <ChevronDown size={11} className={styles.presetSelectIconComposer} />
+        </div>
+      );
+    }
+
+    // If active chat
     if (activeChat.preset_locked) {
       return (
         <span className={styles.presetLockedComposer} title="Preset locked for this chat">
@@ -221,8 +261,8 @@ export default function ChatArea() {
     return (
       <div className={styles.chatAreaEmpty}>
         <div className={styles.emptyStateContent}>
-          <h2>Welcome to Cubiq</h2>
-          <p>Send a message below to start a new conversation.</p>
+          <h2>New Chat</h2>
+          <p>Select a preset and send a message to start.</p>
         </div>
         {renderComposer()}
       </div>

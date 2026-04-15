@@ -34,8 +34,7 @@ struct ChoiceMessage {
 #[derive(Debug, Deserialize)]
 struct ApiError {
     message: String,
-    #[serde(rename = "type")]
-    error_type: Option<String>,
+    // error_type: Option<String>,
 }
 
 /// Errors that the AI service can return, with user-friendly messages.
@@ -52,12 +51,20 @@ pub enum AiError {
 impl std::fmt::Display for AiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AiError::MissingApiKey => write!(f, "API key is not set. Please add your Groq API key in Settings."),
+            AiError::MissingApiKey => write!(
+                f,
+                "API key is not set. Please add your Groq API key in Settings."
+            ),
             AiError::InvalidUrl(u) => write!(f, "Invalid model URL: {}. Check your Settings.", u),
-            AiError::NetworkError(e) => write!(f, "Network error: {}. Check your internet connection.", e),
+            AiError::NetworkError(e) => {
+                write!(f, "Network error: {}. Check your internet connection.", e)
+            }
             AiError::RateLimit(msg) => write!(f, "Rate limited by the API: {}", msg),
             AiError::ApiError(msg) => write!(f, "API error: {}", msg),
-            AiError::EmptyResponse => write!(f, "The AI returned an empty response. Try again or check your model settings."),
+            AiError::EmptyResponse => write!(
+                f,
+                "The AI returned an empty response. Try again or check your model settings."
+            ),
         }
     }
 }
@@ -77,10 +84,7 @@ pub async fn chat_completion(
         return Err(AiError::MissingApiKey);
     }
 
-    let url = format!(
-        "{}/chat/completions",
-        base_url.trim_end_matches('/')
-    );
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
     // Quick sanity check on the URL
     if !url.starts_with("http://") && !url.starts_with("https://") {
@@ -128,13 +132,11 @@ pub async fn chat_completion(
     // ── Handle HTTP-level errors ──────────────────────────────────
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
         let body_text = response.text().await.unwrap_or_default();
-        return Err(AiError::RateLimit(
-            if body_text.is_empty() {
-                "Too many requests. Please wait and try again.".to_string()
-            } else {
-                body_text
-            },
-        ));
+        return Err(AiError::RateLimit(if body_text.is_empty() {
+            "Too many requests. Please wait and try again.".to_string()
+        } else {
+            body_text
+        }));
     }
 
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
@@ -143,7 +145,10 @@ pub async fn chat_completion(
         ));
     }
 
-    let body_text = response.text().await.map_err(|e| AiError::NetworkError(e.to_string()))?;
+    let body_text = response
+        .text()
+        .await
+        .map_err(|e| AiError::NetworkError(e.to_string()))?;
 
     if !status.is_success() {
         // Try to get a structured error message
@@ -155,15 +160,17 @@ pub async fn chat_completion(
         return Err(AiError::ApiError(format!(
             "HTTP {} — {}",
             status.as_u16(),
-            if body_text.len() > 500 { &body_text[..500] } else { &body_text }
+            if body_text.len() > 500 {
+                &body_text[..500]
+            } else {
+                &body_text
+            }
         )));
     }
 
     // ── Parse successful response ─────────────────────────────────
-    let parsed: ChatCompletionResponse =
-        serde_json::from_str(&body_text).map_err(|e| {
-            AiError::ApiError(format!("Failed to parse API response: {}", e))
-        })?;
+    let parsed: ChatCompletionResponse = serde_json::from_str(&body_text)
+        .map_err(|e| AiError::ApiError(format!("Failed to parse API response: {}", e)))?;
 
     // Check for API-level error in the body (some providers embed this)
     if let Some(err) = parsed.error {

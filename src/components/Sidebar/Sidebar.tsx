@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom';
 import { useAppStore } from '../../store';
 import type { Chat, Folder } from '../../types';
 import {
-  Plus, FolderPlus, Archive, Settings as SettingsIcon,
+  Plus, Archive, Settings as SettingsIcon,
   ChevronRight, MoreHorizontal, Check, X, Folder as FolderIcon,
   FolderOpen, Pencil, Trash2, PanelLeftClose, PanelRightOpen,
+  Search, SearchX, MessageSquare
 } from 'lucide-react';
 import * as ipc from '../../lib/ipc';
 import styles from './Sidebar.module.css';
@@ -52,7 +53,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   const activeChatId = useAppStore(s => s.activeChatId);
   const showArchived = useAppStore(s => s.showArchived);
 
-  const createChatSafe  = useAppStore(s => s.createChatSafe);
+
   const setActiveChat   = useAppStore(s => s.setActiveChat);
   const setShowArchived = useAppStore(s => s.setShowArchived);
   const setSettingsOpen = useAppStore(s => s.setSettingsOpen);
@@ -65,28 +66,34 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   const deleteFolder    = useAppStore(s => s.deleteFolder);
 
   // ── local UI state ──────────────────────────────────────────────
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<number>>(new Set());
-  const [chatsCollapsed, setChatsCollapsed] = useState(false);
+  const [expandedFolders, setExpandedFolders]   = useState<Set<number>>(new Set());
+  const [chatsCollapsed, setChatsCollapsed]       = useState(false);
+  const [workspacesCollapsed, setWorkspacesCollapsed] = useState(true);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingChatId, setRenamingChatId]   = useState<number | null>(null);
   const [renameValue, setRenameValue]           = useState('');
   const [renamingFolderId, setRenamingFolderId] = useState<number | null>(null);
   const [folderRenameValue, setFolderRenameValue] = useState('');
-  const [creatingFolder, setCreatingFolder]     = useState(false);
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [brandingHovered, setBrandingHovered]   = useState(false);
-  const [newFolderName, setNewFolderName]       = useState('');
-  const [deleteFolderDialog, setDeleteFolderDialog] = useState<DeleteFolderDialog | null>(null);
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [searchQuery, setSearchQuery]           = useState('');
+  const [deleteWorkspaceDialog, setDeleteWorkspaceDialog] = useState<DeleteFolderDialog | null>(null);
+  const [quickSearchOpen, setQuickSearchOpen]   = useState(false);
+  const [quickArchivedOpen, setQuickArchivedOpen] = useState(false);
+  const [quickSearchQuery, setQuickSearchQuery] = useState('');
 
   const renameInputRef     = useRef<HTMLInputElement>(null);
   const folderRenameRef    = useRef<HTMLInputElement>(null);
   const newFolderInputRef  = useRef<HTMLInputElement>(null);
   const subMenuRef         = useRef<HTMLDivElement>(null);
   const menuRef            = useRef<HTMLDivElement>(null);
+  const isCommittingNewWorkspace = useRef(false);
 
   // ── focus helpers ────────────────────────────────────────────────
   useEffect(() => { if (renamingChatId)   renameInputRef.current?.focus(); },   [renamingChatId]);
   useEffect(() => { if (renamingFolderId) folderRenameRef.current?.focus(); },  [renamingFolderId]);
-  useEffect(() => { if (creatingFolder)   newFolderInputRef.current?.focus(); }, [creatingFolder]);
+  useEffect(() => { if (creatingWorkspace)  newFolderInputRef.current?.focus(); }, [creatingWorkspace]);
 
   // ── close context menu on outside click / Escape / scroll ───────
   const closeMenu = useCallback(() => setContextMenu(null), []);
@@ -111,9 +118,9 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
     };
   }, [contextMenu, closeMenu]);
 
-  // ─── Folder collapse toggle ─────────────────────────────────────
+  // ─── Folder expansion toggle ─────────────────────────────────────
   const toggleFolder = (id: number) => {
-    setCollapsedFolders(prev => {
+    setExpandedFolders(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
@@ -195,54 +202,59 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
     if (e.key === 'Escape') setRenamingChatId(null);
   };
 
-  // ─── Folder rename (inline) ──────────────────────────────────────
-  const commitFolderRename = async () => {
+  // ─── Workspace rename (inline) ───────────────────────────────────
+  const commitWorkspaceRename = async () => {
     if (renamingFolderId && folderRenameValue.trim()) {
       await renameFolder(renamingFolderId, folderRenameValue.trim());
     }
     setRenamingFolderId(null);
   };
 
-  const onFolderRenameKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter')  commitFolderRename();
+  const onWorkspaceRenameKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter')  commitWorkspaceRename();
     if (e.key === 'Escape') setRenamingFolderId(null);
   };
 
-  // ─── Folder creation ─────────────────────────────────────────────
-  const commitNewFolder = async () => {
-    if (newFolderName.trim()) {
-      await createFolder(newFolderName.trim());
+  // ─── Workspace creation ──────────────────────────────────────────
+  const commitNewWorkspace = async () => {
+    if (isCommittingNewWorkspace.current) return;
+    const name = newWorkspaceName.trim();
+    if (!name) {
+      setCreatingWorkspace(false);
+      return;
     }
-    setCreatingFolder(false);
-    setNewFolderName('');
+
+    isCommittingNewWorkspace.current = true;
+    try {
+      await createFolder(name);
+      setCreatingWorkspace(false);
+      setNewWorkspaceName('');
+    } finally {
+      isCommittingNewWorkspace.current = false;
+    }
   };
 
-  const onNewFolderKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter')  commitNewFolder();
-    if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName(''); }
+  const onNewWorkspaceKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter')  commitNewWorkspace();
+    if (e.key === 'Escape') { setCreatingWorkspace(false); setNewWorkspaceName(''); }
   };
 
-  // ─── Folder delete (with confirmation dialog) ────────────────────
-  const requestDeleteFolder = async (folder: Folder) => {
+  // ─── Workspace delete (with confirmation dialog) ─────────────────
+  const requestDeleteWorkspace = async (folder: Folder) => {
     const count = await ipc.getFolderChatCount(folder.id);
-    setDeleteFolderDialog({ folder, chatCount: count });
+    setDeleteWorkspaceDialog({ folder, chatCount: count });
   };
 
-  const confirmDeleteFolder = async () => {
-    if (!deleteFolderDialog) return;
-    await deleteFolder(deleteFolderDialog.folder.id);
-    setDeleteFolderDialog(null);
+  const confirmDeleteWorkspace = async () => {
+    if (!deleteWorkspaceDialog) return;
+    await deleteFolder(deleteWorkspaceDialog.folder.id);
+    setDeleteWorkspaceDialog(null);
   };
 
   // ─── Folder kebab menu ───────────────────────────────────────────
   const openFolderMenu = (e: React.MouseEvent, folder: Folder) => {
     e.preventDefault();
     e.stopPropagation();
-    // Use a small popup-style context menu reusing same state type
-    // but store as a folder-flavoured action handled separately
-    // For simplicity: inline click triggers rename / delete directly
-    // We'll show a tiny 2-item popover by opening the same context-menu portal
-    // but targeting the folder instead (handled below via folderMenuTarget).
     setFolderMenuTarget({ folder, x: e.clientX, y: e.clientY });
   };
 
@@ -261,7 +273,14 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   }, [folderMenuTarget]);
 
   // ─── Partition chats ─────────────────────────────────────────────
-  const visibleChats = chats.filter(c => c.archived === showArchived);
+  const searchQueryLower = searchQuery.toLowerCase().trim();
+  
+  const visibleChats = chats.filter(c => {
+    const matchesArchive = c.archived === showArchived;
+    if (!matchesArchive) return false;
+    if (!searchQueryLower) return true;
+    return (c.title || 'Untitled').toLowerCase().includes(searchQueryLower);
+  });
 
   const grouped: Record<number, Chat[]> = {};
   const ungrouped: Chat[] = [];
@@ -273,6 +292,8 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
       ungrouped.push(chat);
     }
   }
+
+  const hasAnyMatches = visibleChats.length > 0;
 
   // ─── Chat row renderer ───────────────────────────────────────────
   const renderChatItem = (chat: Chat) => {
@@ -319,11 +340,11 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
       <div
         className={styles.brandingRow}
         style={{ justifyContent: isCollapsed ? 'center' : 'space-between', marginBottom: isCollapsed ? '0' : '16px' }}
-        onMouseEnter={() => isCollapsed && setBrandingHovered(true)}
-        onMouseLeave={() => setBrandingHovered(false)}
       >
         {isCollapsed ? (
-          <div className={styles.collapsedBrandWrap}>
+          <div className={styles.collapsedBrandWrap}
+               onMouseEnter={() => setBrandingHovered(true)}
+               onMouseLeave={() => setBrandingHovered(false)}>
             <img
               src={brandingSrc}
               alt="Cubiq Logo"
@@ -353,171 +374,285 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
         )}
       </div>
 
-      {!isCollapsed && (
+      {isCollapsed ? (
+        <div className={styles.collapsedRailContent}>
+          <div className={styles.collapsedRail}>
+            <button
+              className={styles.railBtn}
+              title="New chat"
+              onClick={() => setActiveChat(null)}
+            >
+              <Plus size={20} />
+            </button>
+            <button
+              className={styles.railBtn}
+              title="Search chats"
+              onClick={() => { setQuickSearchOpen(true); setQuickSearchQuery(''); }}
+            >
+              <Search size={20} />
+            </button>
+          </div>
+
+          <div className={styles.collapsedRailBottom}>
+            <button
+              className={styles.railBtn}
+              title="Archived chats"
+              onClick={() => { setQuickArchivedOpen(true); setQuickSearchQuery(''); }}
+            >
+              <Archive size={20} />
+            </button>
+            <button
+              className={styles.railBtn}
+              title="Settings"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <SettingsIcon size={20} />
+            </button>
+          </div>
+        </div>
+      ) : (
         <>
-          {/* ── Primary Actions Row ── */}
+          {/* 1. New Chat button (now lazy) */}
           <div className={styles.primaryActionsRow}>
-            <button className={styles.newChatBtn} onClick={createChatSafe}>
+            <button
+              className={styles.newChatBtn}
+              onClick={() => setActiveChat(null)}
+            >
               <Plus size={16} />
               New chat
             </button>
-            <button
-              className={styles.newFolderBtn}
-              title="New folder"
-              onClick={() => setCreatingFolder(true)}
-            >
-              <FolderPlus size={16} />
-            </button>
           </div>
 
-          {/* ── New folder input row ── */}
-          {creatingFolder && (
-            <div className={styles.newFolderRow}>
-          <FolderIcon size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-          <input
-            ref={newFolderInputRef}
-            className={styles.newFolderInput}
-            placeholder="Folder name…"
-            value={newFolderName}
-            onChange={e => setNewFolderName(e.target.value)}
-            onKeyDown={onNewFolderKey}
-            onBlur={commitNewFolder}
-          />
-          <button className={styles.newFolderConfirmBtn} onMouseDown={commitNewFolder}>
-            <Check size={14} />
-          </button>
-          <button className={styles.newFolderCancelBtn} onMouseDown={() => { setCreatingFolder(false); setNewFolderName(''); }}>
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      {/* ── Chat / folder list ── */}
-      <div className={styles.chatList}>
-
-        {showArchived ? (
-          /* ── Archived view: flat list with slide-in animation ── */
-          <div key="archived" className={styles.animatedSection}>
-            {visibleChats.length === 0 ? (
-              <div style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                No archived chats
-              </div>
-            ) : (
-              visibleChats.map(renderChatItem)
-            )}
-          </div>
-        ) : (
-          /* ── Active view: folder groups + ungrouped ── */
-          <>
-            {folders.map(folder => {
-              const folderChats = grouped[folder.id] ?? [];
-              const isCollapsed = collapsedFolders.has(folder.id);
-              const isRenamingF = renamingFolderId === folder.id;
-
-              return (
-                <div key={folder.id} className={styles.folderSection}>
-                  <div
-                    className={styles.folderHeader}
-                    onClick={() => !isRenamingF && toggleFolder(folder.id)}
-                    onContextMenu={e => openFolderMenu(e, folder)}
-                  >
-                    <ChevronRight
-                      size={12}
-                      className={`${styles.folderChevron} ${!isCollapsed ? styles.folderChevronOpen : ''}`}
-                    />
-
-                    {isRenamingF ? (
-                      <input
-                        ref={folderRenameRef}
-                        className={styles.folderNameInput}
-                        value={folderRenameValue}
-                        onChange={e => setFolderRenameValue(e.target.value)}
-                        onBlur={commitFolderRename}
-                        onKeyDown={onFolderRenameKey}
-                        onClick={e => e.stopPropagation()}
-                      />
-                    ) : (
-                      <>
-                        {isCollapsed
-                          ? <FolderIcon size={13} style={{ flexShrink: 0 }} />
-                          : <FolderOpen size={13} style={{ flexShrink: 0 }} />
-                        }
-                        <span className={styles.folderName}>{folder.name}</span>
-                        <span className={styles.folderCount}>{folderChats.length}</span>
-                      </>
-                    )}
-
-                    <button
-                      className={styles.folderMenuBtn}
-                      title="Folder options"
-                      onClick={e => openFolderMenu(e, folder)}
-                    >
-                      <MoreHorizontal size={14} />
-                    </button>
-                  </div>
-
-                  {!isCollapsed && (
-                    <div className={styles.folderChildren}>
-                      {folderChats.length === 0 ? (
-                        <div style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                          Empty folder
-                        </div>
-                      ) : (
-                        folderChats.map(renderChatItem)
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* ── Default "Chats" root section (always visible) ── */}
-            <div className={styles.folderSection}>
-              <div
-                className={styles.chatsHeading}
-                onClick={() => setChatsCollapsed(p => !p)}
-              >
-                <ChevronRight
-                  size={12}
-                  className={`${styles.folderChevron} ${!chatsCollapsed ? styles.folderChevronOpen : ''}`}
-                />
-                <span>Chats</span>
-                <span className={styles.folderCount}>{ungrouped.length}</span>
-              </div>
-              {!chatsCollapsed && (
-                <div className={styles.chatsChildren}>
-                  {ungrouped.length === 0 ? (
-                    <div style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      No chats yet
-                    </div>
-                  ) : (
-                    ungrouped.map(renderChatItem)
-                  )}
-                </div>
+          {/* 2. Search row (now matches New Chat width) */}
+          <div className={styles.searchRow}>
+            <div className={styles.searchInputWrapper}>
+              <Search size={14} className={styles.searchIcon} />
+              <input
+                className={styles.searchInput}
+                placeholder="Search chats…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') setSearchQuery('');
+                }}
+              />
+              {searchQuery && (
+                <button
+                  className={styles.searchClearBtn}
+                  onClick={() => setSearchQuery('')}
+                  title="Clear search"
+                >
+                  <X size={12} />
+                </button>
               )}
             </div>
-          </>
-        )}
-      </div>
+          </div>
 
-      <div className={styles.bottomActions}>
-        <button
-          className={styles.actionBtn}
-          onClick={() => { setShowArchived(!showArchived); setActiveChat(null); }}
-        >
-          <Archive size={18} />
-          {showArchived ? 'Active chats' : 'Archived chats'}
-        </button>
-        <button className={styles.actionBtn} onClick={() => setSettingsOpen(true)}>
-          <SettingsIcon size={18} />
-          Settings
-        </button>
-      </div>
-      </>)}
+          {/* 3. Chats list (Grouped) */}
+          <div className={styles.chatList}>
 
-      {/* ═══════════════════════════════════════════════════════════
-          Context Menu Portal
-      ═══════════════════════════════════════════════════════════ */}
+            {showArchived ? (
+              /* Archived view */
+              <div key="archived" className={styles.animatedSection}>
+                {!hasAnyMatches && searchQuery && (
+                  <div className={styles.emptySearchState}>
+                    <SearchX size={32} className={styles.emptySearchIcon} />
+                    <span className={styles.emptySearchText}>No matches found</span>
+                  </div>
+                )}
+                {visibleChats.length === 0 ? (
+                  !searchQuery && (
+                    <div style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                      No archived chats
+                    </div>
+                  )
+                ) : (
+                  visibleChats.map(renderChatItem)
+                )}
+              </div>
+            ) : (
+              /* Active view restructuring */
+              <>
+                {!hasAnyMatches && searchQuery && (
+                  <div className={styles.emptySearchState}>
+                    <SearchX size={32} className={styles.emptySearchIcon} />
+                    <span className={styles.emptySearchText}>No matches found</span>
+                  </div>
+                )}
+
+                {/* 3a. Workspaces Accordion section */}
+                <div className={styles.workspacesSection}>
+                  <div className={styles.workspacesHeader} onClick={() => setWorkspacesCollapsed(p => !p)}>
+                    <div className={styles.workspaceHeaderMain}>
+                      <span>Workspaces</span>
+                    </div>
+                    <div className={styles.headerRightArea}>
+                      <ChevronRight
+                        size={12}
+                        className={`${styles.headerChevron} ${(!workspacesCollapsed || !!searchQuery) ? styles.headerChevronOpen : ''} ${(workspacesCollapsed && !searchQuery) ? styles.headerChevronVisible : ''}`}
+                      />
+                      <span className={styles.folderCount}>
+                        {folders.reduce((acc, f) => acc + (grouped[f.id]?.length || 0), 0)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {(!workspacesCollapsed || !!searchQuery) && (
+                    <>
+                      {/* Subtle New Workspace row item */}
+                      {!creatingWorkspace && (
+                        <div
+                          className={styles.newWorkspaceSubtle}
+                          onClick={e => { e.stopPropagation(); setCreatingWorkspace(true); }}
+                        >
+                          <Plus size={14} />
+                          <span>New workspace</span>
+                        </div>
+                      )}
+
+                      {/* New Workspace input row */}
+                      {creatingWorkspace && (
+                        <div className={styles.newFolderRow}>
+                          <FolderIcon size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                          <input
+                            ref={newFolderInputRef}
+                            className={styles.newFolderInput}
+                            placeholder="Workspace name…"
+                            value={newWorkspaceName}
+                            onChange={e => setNewWorkspaceName(e.target.value)}
+                            onKeyDown={onNewWorkspaceKey}
+                            onBlur={commitNewWorkspace}
+                          />
+                          <button className={styles.newFolderConfirmBtn} onMouseDown={commitNewWorkspace}>
+                            <Check size={14} />
+                          </button>
+                          <button className={styles.newFolderCancelBtn} onMouseDown={() => { setCreatingWorkspace(false); setNewWorkspaceName(''); }}>
+                            <X size={14} />
+                          </button>
+                        </div>
+                      )}
+
+                      <div className={styles.workspacesList}>
+                        {folders.map(folder => {
+                          const folderChats = grouped[folder.id] ?? [];
+                          const isExpanded = expandedFolders.has(folder.id);
+                          const isRenamingF = renamingFolderId === folder.id;
+
+                          if (searchQuery && folderChats.length === 0) return null;
+
+                          return (
+                            <div key={folder.id} className={styles.folderSection}>
+                            <div
+                              className={styles.folderHeader}
+                              onClick={() => !isRenamingF && toggleFolder(folder.id)}
+                              onContextMenu={e => openFolderMenu(e, folder)}
+                            >
+                              {isRenamingF ? (
+                                <input
+                                  ref={folderRenameRef}
+                                  className={styles.folderNameInput}
+                                  value={folderRenameValue}
+                                  onChange={e => setFolderRenameValue(e.target.value)}
+                                  onBlur={commitWorkspaceRename}
+                                  onKeyDown={onWorkspaceRenameKey}
+                                  onClick={e => e.stopPropagation()}
+                                />
+                              ) : (
+                                <>
+                                  <div className={styles.folderHeaderLeft}>
+                                    {(isExpanded || !!searchQuery)
+                                      ? <FolderOpen size={13} style={{ flexShrink: 0, opacity: 0.8 }} />
+                                      : <FolderIcon size={13} style={{ flexShrink: 0, opacity: 0.8 }} />
+                                    }
+                                    <span className={styles.folderName}>{folder.name}</span>
+                                  </div>
+                                  <div className={styles.folderHeaderRight}>
+                                    <ChevronRight
+                                      size={12}
+                                      className={`${styles.headerChevron} ${(isExpanded || !!searchQuery) ? styles.headerChevronOpen : ''}`}
+                                    />
+                                    <button
+                                      className={styles.folderMenuBtn}
+                                      title="Workspace options"
+                                      onClick={e => { e.stopPropagation(); openFolderMenu(e, folder); }}
+                                    >
+                                      <MoreHorizontal size={14} />
+                                    </button>
+                                    <span className={styles.folderCount}>{folderChats.length}</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                              {(isExpanded || !!searchQuery) && (
+                                <div className={styles.folderChildren}>
+                                  {folderChats.length === 0 ? (
+                                    <div style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                      Empty Workspace
+                                    </div>
+                                  ) : (
+                                    folderChats.map(renderChatItem)
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* 3b. Chats section (ungrouped) */}
+                {(!searchQuery || ungrouped.length > 0) && (
+                  <div className={styles.folderSection}>
+                    <div
+                      className={styles.chatsHeading}
+                      onClick={() => setChatsCollapsed(p => !p)}
+                    >
+                      <span>Chats</span>
+                      <div className={styles.folderHeaderRight}>
+                        <ChevronRight
+                          size={12}
+                          className={`${styles.headerChevron} ${(!chatsCollapsed || !!searchQuery) ? styles.headerChevronOpen : ''} ${(chatsCollapsed && !searchQuery) ? styles.headerChevronVisible : ''}`}
+                        />
+                        <span className={styles.folderCount}>{ungrouped.length}</span>
+                      </div>
+                    </div>
+                    {(!chatsCollapsed || !!searchQuery) && (
+                      <div className={styles.chatsChildren}>
+                        {ungrouped.length === 0 ? (
+                          <div style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                            No chats yet
+                          </div>
+                        ) : (
+                          ungrouped.map(renderChatItem)
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className={styles.bottomActions}>
+            <button
+              className={styles.actionBtn}
+              onClick={() => { setShowArchived(!showArchived); setActiveChat(null); }}
+            >
+              <Archive size={18} />
+              {showArchived ? 'Active chats' : 'Archived chats'}
+            </button>
+            <button className={styles.actionBtn} onClick={() => setSettingsOpen(true)}>
+              <SettingsIcon size={18} />
+              Settings
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Context Menu Portal */}
       {contextMenu && createPortal(
         <div
           ref={menuRef}
@@ -534,23 +669,23 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
             <Archive size={14} /> {contextMenu.chat.archived ? 'Unarchive' : 'Archive'}
           </button>
 
-          {/* Remove from folder (only if chat is inside a folder) */}
+          {/* Remove from Workspace */}
           {!showArchived && contextMenu.chat.folder_id != null && (() => {
             const folder = folders.find(f => f.id === contextMenu.chat.folder_id);
             return (
               <button className={styles.contextMenuItem} onClick={ctxRemoveFromFolder}>
-                <X size={14} /> Remove from {folder?.name ?? 'Folder'}
+                <X size={14} /> Remove from {folder?.name ?? 'Workspace'}
               </button>
             );
           })()}
 
-          {/* Move to Folder (only in active view) */}
+          {/* Move to Workspace */}
           {!showArchived && (
             <div
               className={`${styles.contextMenuItem} ${styles.contextMenuSub}`}
               onMouseEnter={openMoveSubMenu}
             >
-              <FolderIcon size={14} /> Move to Folder
+              <FolderIcon size={14} /> Move to Workspace
               <ChevronRight size={12} style={{ marginLeft: 'auto' }} />
             </div>
           )}
@@ -568,7 +703,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
         document.body
       )}
 
-      {/* ── Move-to-folder sub-panel ── */}
+      {/* Move-to-workspace sub-panel */}
       {contextMenu?.subMenuOpen && createPortal(
         <div
           ref={subMenuRef}
@@ -589,14 +724,14 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
           ))}
           {folders.length === 0 && (
             <div style={{ padding: '6px 12px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              No folders yet
+              No Workspaces yet
             </div>
           )}
         </div>,
         document.body
       )}
 
-      {/* ── Folder kebab menu portal ── */}
+      {/* Workspace kebab menu portal */}
       {folderMenuTarget && createPortal(
         <div
           className={styles.contextMenu}
@@ -618,42 +753,129 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
             className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`}
             onClick={() => {
               setFolderMenuTarget(null);
-              requestDeleteFolder(folderMenuTarget.folder);
+              requestDeleteWorkspace(folderMenuTarget.folder);
             }}
           >
-            <Trash2 size={14} /> Delete Folder
+            <Trash2 size={14} /> Delete Workspace
           </button>
         </div>,
         document.body
       )}
 
-      {/* ═══════════════════════════════════════════════════════════
-          Delete Folder Confirmation Dialog
-      ═══════════════════════════════════════════════════════════ */}
-      {deleteFolderDialog && createPortal(
-        <div className={styles.dialogOverlay} onClick={() => setDeleteFolderDialog(null)}>
+      {/* Delete Workspace Confirmation */}
+      {deleteWorkspaceDialog && createPortal(
+        <div className={styles.dialogOverlay} onClick={() => setDeleteWorkspaceDialog(null)}>
           <div className={styles.dialogBox} onClick={e => e.stopPropagation()}>
             <div className={styles.dialogTitle}>
-              Delete folder &ldquo;{deleteFolderDialog.folder.name}&rdquo;?
+              Delete Workspace &ldquo;{deleteWorkspaceDialog.folder.name}&rdquo;?
             </div>
             <div className={styles.dialogBody}>
-              {deleteFolderDialog.chatCount > 0 ? (
+              {deleteWorkspaceDialog.chatCount > 0 ? (
                 <>
-                  <strong>{deleteFolderDialog.chatCount}</strong>{' '}
-                  {deleteFolderDialog.chatCount === 1 ? 'chat' : 'chats'} will be moved to{' '}
+                  <strong>{deleteWorkspaceDialog.chatCount}</strong>{' '}
+                  {deleteWorkspaceDialog.chatCount === 1 ? 'chat' : 'chats'} will be moved to{' '}
                   <strong>Chats</strong>. No chats will be deleted.
                 </>
               ) : (
-                'This folder is empty. It will be removed.'
+                'This Workspace is empty. It will be removed.'
               )}
             </div>
             <div className={styles.dialogActions}>
-              <button className={styles.dialogCancelBtn} onClick={() => setDeleteFolderDialog(null)}>
+              <button className={styles.dialogCancelBtn} onClick={() => setDeleteWorkspaceDialog(null)}>
                 Cancel
               </button>
-              <button className={styles.dialogDeleteBtn} onClick={confirmDeleteFolder}>
-                Delete Folder
+              <button className={styles.dialogDeleteBtn} onClick={confirmDeleteWorkspace}>
+                Delete Workspace
               </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {/* Quick Search Modal (Collapsed Rails) */}
+      {quickSearchOpen && createPortal(
+        <div className={styles.dialogOverlay} onClick={() => setQuickSearchOpen(false)}>
+          <div className={`${styles.dialogBox} ${styles.quickActionModal}`} onClick={e => e.stopPropagation()}>
+            <div className={styles.dialogTitle}>Search Chats</div>
+            <div className={styles.dialogBody}>
+              <div className={styles.searchInputWrapper} style={{ marginBottom: '12px' }}>
+                <Search size={14} className={styles.searchIcon} />
+                <input
+                  autoFocus
+                  className={styles.searchInput}
+                  placeholder="Type to search…"
+                  value={quickSearchQuery}
+                  onChange={e => setQuickSearchQuery(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') setQuickSearchOpen(false);
+                  }}
+                />
+              </div>
+              <div className={styles.quickResultsList}>
+                {chats
+                  .filter(c => !c.archived && c.title.toLowerCase().includes(quickSearchQuery.toLowerCase()))
+                  .map(chat => (
+                    <div
+                      key={chat.id}
+                      className={styles.quickResultItem}
+                      onClick={() => {
+                        setActiveChat(chat.id!);
+                        setQuickSearchOpen(false);
+                      }}
+                    >
+                      <MessageSquare size={14} className={styles.quietIcon} />
+                      <span className={styles.quickResultTitle}>{chat.title}</span>
+                    </div>
+                  ))}
+                {chats.filter(c => !c.archived && c.title.toLowerCase().includes(quickSearchQuery.toLowerCase())).length === 0 && (
+                  <div className={styles.quiet}>No results found</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Quick Archived Modal (Collapsed Rails) */}
+      {quickArchivedOpen && createPortal(
+        <div className={styles.dialogOverlay} onClick={() => setQuickArchivedOpen(false)}>
+          <div className={`${styles.dialogBox} ${styles.quickActionModal}`} onClick={e => e.stopPropagation()}>
+            <div className={styles.dialogTitle}>Archived Chats</div>
+            <div className={styles.dialogBody}>
+              <div className={styles.searchInputWrapper} style={{ marginBottom: '12px' }}>
+                <Search size={14} className={styles.searchIcon} />
+                <input
+                  autoFocus
+                  className={styles.searchInput}
+                  placeholder="Filter archived…"
+                  value={quickSearchQuery}
+                  onChange={e => setQuickSearchQuery(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') setQuickArchivedOpen(false);
+                  }}
+                />
+              </div>
+              <div className={styles.quickResultsList}>
+                {chats
+                  .filter(c => c.archived && c.title.toLowerCase().includes(quickSearchQuery.toLowerCase()))
+                  .map(chat => (
+                    <div
+                      key={chat.id}
+                      className={styles.quickResultItem}
+                      onClick={() => {
+                        setActiveChat(chat.id!);
+                        setQuickArchivedOpen(false);
+                      }}
+                    >
+                      <Archive size={14} className={styles.quietIcon} />
+                      <span className={styles.quickResultTitle}>{chat.title}</span>
+                    </div>
+                  ))}
+                {chats.filter(c => c.archived && c.title.toLowerCase().includes(quickSearchQuery.toLowerCase())).length === 0 && (
+                  <div className={styles.quiet}>No archived chats found</div>
+                )}
+              </div>
             </div>
           </div>
         </div>,

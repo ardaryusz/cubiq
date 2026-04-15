@@ -34,8 +34,8 @@
 .brandingRow {
   display: flex;
   align-items: center;
-  min-height: 48px;
-  padding: 4px 6px;
+  min-height: 56px; /* Increased from 48px for better vertical rhythm */
+  padding: 8px 12px; /* Increased horizontal padding */
 }
 
 .brandLogoOnly {
@@ -96,6 +96,210 @@
   color: var(--text-primary);
 }
 
+/* ── Collapsed icon rail ────────────────────────────────────── */
+.collapsedRailContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+}
+
+.collapsedRail, .collapsedRailBottom {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+.railBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.railBtn:hover {
+  background-color: var(--state-hover);
+  color: var(--text-primary);
+}
+
+.railBtn:active {
+  background-color: var(--state-active);
+}
+
+/* ── Search ─────────────────────────────────────────────────── */
+.searchRow {
+  padding: 0;
+  margin-bottom: 20px; /* Increased gap before Workspaces */
+}
+
+.searchInputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background-color: transparent;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  padding: 0 8px;
+  height: 32px;
+  transition: all 0.15s;
+}
+
+.searchInputWrapper:hover {
+  background-color: var(--state-hover);
+}
+
+.searchInputWrapper:focus-within {
+  border-color: var(--accent-base);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.1);
+  background-color: var(--bg-app);
+}
+
+.searchIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  padding: 0 8px;
+  width: 100%;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.searchClearBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: all 0.1s;
+}
+
+.searchClearBtn:hover {
+  color: var(--text-primary);
+  background-color: var(--state-active);
+}
+
+.emptySearchState {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.emptySearchIcon {
+  opacity: 0.4;
+}
+
+.emptySearchText {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* ── Workspaces Section ────────────────────────────────────── */
+.workspacesSection {
+  margin-top: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspacesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 4px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.workspacesSection:hover .workspacesHeader {
+  color: var(--text-primary);
+}
+
+.headerRightArea {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folderHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 4px; /* Tighter for menu/count/chevron */
+}
+
+.headerChevron {
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.2s;
+}
+
+.folderSection:hover .headerChevron,
+.folderSection:hover .folderMenuBtn,
+.workspacesHeader:hover .headerChevron {
+  opacity: 1;
+}
+
+.headerChevronVisible {
+  opacity: 1 !important;
+}
+
+.headerChevronOpen {
+  transform: rotate(90deg);
+}
+/* Wait, chevron right rotated 90 is down. That's good. */
+.newWorkspaceSubtle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.newWorkspaceSubtle:hover {
+  background-color: var(--state-hover);
+  color: var(--text-primary);
+}
+
+.workspacesList {
+  display: flex;
+  flex-direction: column;
+}
+
 /* ── Primary Actions ───────────────────────────────────────── */
 .primaryActionsRow {
   display: flex;
@@ -120,22 +324,6 @@
   background-color: var(--state-hover);
 }
 
-.newFolderBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px;
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-md);
-  color: var(--text-muted);
-  transition: background-color 0.15s;
-  flex-shrink: 0;
-}
-.newFolderBtn:hover {
-  background-color: var(--state-hover);
-  color: var(--text-primary);
-}
-
 /* ── Chat list scroll area ─────────────────────────────────── */
 .chatList {
   flex: 1;
@@ -154,37 +342,34 @@
 .folderHeader {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  justify-content: space-between;
+  padding: 7px 8px;
   border-radius: var(--radius-md);
   cursor: pointer;
   user-select: none;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   transition: background-color 0.15s;
 }
-.folderHeader:hover {
-  background-color: var(--state-hover);
-  color: var(--text-primary);
-}
 
-.folderChevron {
-  transition: transform 0.2s;
-  flex-shrink: 0;
-}
-.folderChevronOpen {
-  transform: rotate(90deg);
+.folderHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .folderName {
   flex: 1;
-  white-space: nowrap;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
+  white-space: nowrap;
+}
+
+.folderSection:hover .folderHeader {
+  background-color: var(--state-hover);
 }
 
 .folderCount {
@@ -192,7 +377,10 @@
   padding: 1px 5px;
   border-radius: 8px;
   background: var(--state-hover);
+  color: var(--text-muted);
   flex-shrink: 0;
+  min-width: 20px;
+  text-align: center;
 }
 
 .folderMenuBtn {
@@ -202,74 +390,40 @@
   border-radius: 4px;
   opacity: 0;
   color: var(--text-muted);
-  transition: opacity 0.15s;
-  flex-shrink: 0;
+  transition: opacity 0.12s;
 }
-.folderHeader:hover .folderMenuBtn {
-  opacity: 1;
-}
+
 .folderMenuBtn:hover {
   background: var(--state-active);
   color: var(--text-primary);
 }
 
 .folderChildren {
-  padding-left: 20px;
+  padding-left: 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin-top: 2px;
-  border-left: 2px solid var(--state-active);
-  margin-left: 18px;
+  margin-bottom: 4px;
 }
 
 /* ── Default "Chats" root section heading ──────────────────── */
 .chatsHeading {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  font-size: 0.8rem;
+  justify-content: space-between;
+  padding: 8px 4px;
+  margin-top: 16px;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-muted);
-  user-select: none;
   cursor: pointer;
-  border-radius: var(--radius-md);
-  transition: background-color 0.15s;
-}
-.chatsHeading:hover {
-  background-color: var(--state-hover);
-  color: var(--text-primary);
-}
-
-/* ── Chats section children (no indent — root level) ──────── */
-.chatsChildren {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 2px;
-}
-
-/* ── No Folder section heading (kept for compat) ───────────── */
-.noFolderHeading {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
   user-select: none;
-  cursor: pointer;
-  border-radius: var(--radius-md);
-  transition: background-color 0.15s;
 }
-.noFolderHeading:hover {
-  background-color: var(--state-hover);
+.folderSection:hover .chatsHeading {
   color: var(--text-primary);
 }
 
@@ -277,16 +431,13 @@
 .chatItem {
   display: flex;
   align-items: center;
-  padding: 9px 10px;
+  padding: 8px 10px;
   border-radius: var(--radius-md);
   font-size: 0.9rem;
   color: var(--text-primary);
-  user-select: none;
-  position: relative;
-  gap: 6px;
+  gap: 8px;
   text-align: left;
   width: 100%;
-  overflow: hidden;
 }
 .chatItem:hover {
   background-color: var(--state-hover);
@@ -301,7 +452,28 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
+}
+
+/* ── Chats section children ──────── */
+.chatsChildren {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.noFolderHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 4px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  user-select: none;
 }
 
 /* inline rename input */
@@ -528,3 +700,62 @@
   font-weight: 500;
 }
 .dialogDeleteBtn:hover { background: #dc2626; }
+
+/* ── Quick Action Modal ────────────────────────────────────── */
+.quickActionModal {
+  max-width: 400px !important;
+  width: 90% !important;
+}
+
+.quickResultsList {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.quickResultsList::-webkit-scrollbar {
+  width: 4px;
+}
+.quickResultsList::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 4px;
+}
+
+.quickResultItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.quickResultItem:hover {
+  background-color: var(--state-hover);
+}
+
+.quickResultTitle {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quietIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.quiet {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}

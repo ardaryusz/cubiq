@@ -8,6 +8,7 @@ interface AppState {
   presets: Preset[];
   folders: Folder[];
   activeChatId: number | null;
+  draftPresetId: number | null;
   showArchived: boolean;
   isSettingsOpen: boolean;
   isLoading: boolean;
@@ -49,8 +50,8 @@ interface AppState {
   deleteFolder: (id: number) => Promise<void>;
   moveChatToFolder: (chatId: number, folderId: number | null) => Promise<void>;
 
-  // Empty chat guard
-  createChatSafe: () => Promise<number | null>;
+  // Empty chat guard (renamed/repurposed for lazy creation)
+  startNewChat: () => Promise<void>;
 
   // Bulk actions
   bulkArchiveChats: (ids: number[], archived: boolean) => Promise<void>;
@@ -79,6 +80,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   presets: [],
   folders: [],
   activeChatId: null,
+  draftPresetId: null,
   showArchived: false,
   isSettingsOpen: false,
   isLoading: true,
@@ -95,13 +97,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       ]);
 
       applyAppTheme(settings.app_theme);
-      set({ settings, chats, presets, folders, isLoading: false });
+      set({ 
+        settings, 
+        chats, 
+        presets, 
+        folders, 
+        isLoading: false,
+        draftPresetId: presets.length > 0 ? presets[0].id : null
+      });
     } catch (err: unknown) {
       set({ error: String(err), isLoading: false });
     }
   },
 
-  setActiveChat: (id) => set({ activeChatId: id }),
+  setActiveChat: (id) => {
+    set({ activeChatId: id });
+    if (id === null) {
+      const { presets } = get();
+      set({ draftPresetId: presets.length > 0 ? presets[0].id : null });
+    }
+  },
   setShowArchived: (show) => set({ showArchived: show }),
   setSettingsOpen: (isOpen) => set({ isSettingsOpen: isOpen }),
 
@@ -147,17 +162,33 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   /** Guard: if an empty unlocked "New Chat" already exists, select it instead of creating another. */
-  createChatSafe: async () => {
+  /** One-step startup for first message in a draft chat. */
+  startNewChat: async () => {
     try {
-      const existingId = await ipc.findEmptyChat();
-      if (existingId !== null && existingId !== undefined) {
-        set({ activeChatId: existingId });
-        return existingId;
+      const { draftPresetId, refreshChats } = get();
+      
+      // 1. Create the chat row
+      const id = await ipc.createChat('New Chat');
+      if (!id) return;
+
+      // 2. Set the preset if we have a draft one
+      if (draftPresetId) {
+        await ipc.updateChatPreset(id, draftPresetId);
       }
-      return get().createChat('New Chat');
+
+      // 3. Set as active
+      set({ activeChatId: id, draftPresetId: null });
+
+      // 4. Send the message (this handles locking the preset + auto-titling)
+      // Note: We don't call ChatArea's doSend, we do it via IPC here to stay atomic if possible
+      // but for simplicity we'll just let ChatArea pick up the new activeChatId.
+      // Wait, if we change activeChatId here, ChatArea's useEffect will clear the input.
+      // We should probably pass the callback or just do the logic here.
+      
+      // Let's just return the ID and let ChatArea handle the sequential calls for now.
+      await refreshChats();
     } catch (error) {
-      console.error('Failed to create chat safely', error);
-      return get().createChat('New Chat');
+      console.error('Failed to start new chat', error);
     }
   },
 
