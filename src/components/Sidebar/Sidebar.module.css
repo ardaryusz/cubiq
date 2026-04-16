@@ -491,9 +491,9 @@
   background-color: var(--state-active);
   font-weight: 500;
 }
-.chatItemSelected {
-  background-color: rgba(var(--accent-rgb), 0.12) !important;
-  outline: 1px solid rgba(var(--accent-rgb), 0.35);
+.chatItem.chatItemSelected {
+  background-color: var(--state-hover) !important;
+  box-shadow: inset 0 0 0 1px var(--accent-base), inset 3px 0 0 0 var(--accent-base) !important;
 }
 .chatItemDragging {
   opacity: 0.4;
@@ -1023,4 +1023,90 @@
 }
 @keyframes toastOut {
   to { opacity: 0; transform: translateX(-50%) translateY(12px); }
+}
+
+/* ── Selection hint (compact indicator above bottom buttons) ── */
+.selectionHint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-md);
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-rgb), 0.2);
+  font-size: 0.8rem;
+  color: var(--accent-base);
+  font-weight: 500;
+}
+.selectionHintClear {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 3px;
+  color: var(--accent-base);
+  opacity: 0.7;
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+.selectionHintClear:hover { opacity: 1; }
+
+/* ── Context menu selection badge ─────────────────────────── */
+.ctxSelectionBadge {
+  padding: 5px 12px 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-base);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border-medium);
+  margin-bottom: 2px;
+}
+
+/* Archive button drop-valid when in archived view (drag-out target) */
+.dropTargetValidArchived {
+  outline: 1.5px dashed rgba(var(--accent-rgb), 0.5);
+  background: rgba(var(--accent-rgb), 0.05);
+}
+
+/* ── Archive-view drop zones (shown during drag) ────────── */
+.archiveDropTargets {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 4px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-md);
+  background: rgba(var(--accent-rgb), 0.04);
+  border: 1px dashed rgba(var(--accent-rgb), 0.2);
+  animation: fadeIn 0.15s ease;
+}
+.archiveDropHint {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 0 6px 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.archiveDropZone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  border: 1.5px dashed transparent;
+  transition: background 0.1s, border-color 0.1s;
+  cursor: default;
+}
+.archiveDropZone:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: rgba(var(--accent-rgb), 0.3);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }

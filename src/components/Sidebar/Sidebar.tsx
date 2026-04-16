@@ -6,7 +6,7 @@ import {
   Plus, Archive, Settings as SettingsIcon,
   ChevronRight, MoreHorizontal, Check, X, Folder as FolderIcon,
   FolderOpen, Pencil, Trash2, PanelLeftClose, PanelRightOpen,
-  Search, SearchX, MessageSquare, CheckSquare, MoveRight,
+  Search, SearchX, MessageSquare, CheckSquare,
 } from 'lucide-react';
 import * as ipc from '../../lib/ipc';
 import styles from './Sidebar.module.css';
@@ -46,8 +46,8 @@ interface DeleteFolderDialog {
 }
 
 interface DragState {
-  chatId: number;
-  chat: Chat;
+  dragIds: number[];
+  chat: Chat; // For preview UI purposes
   armed: boolean;  // hold delay completed
   active: boolean; // mouse moved past threshold
   startX: number;
@@ -58,7 +58,9 @@ interface DragState {
 
 type DropTarget =
   | { type: 'folder'; folderId: number }
-  | { type: 'chats' };
+  | { type: 'chats' }
+  | { type: 'archive' }    // drop to archive (normal view → Archived)
+  | { type: 'unarchive' }; // drop to unarchive (archived view → Active/CHATS)
 
 interface BulkDeleteDialog {
   count: number;
@@ -89,9 +91,6 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   const setShowArchived  = useAppStore(s => s.setShowArchived);
   const setSettingsOpen  = useAppStore(s => s.setSettingsOpen);
   const renameChat       = useAppStore(s => s.renameChat);
-  const archiveChat      = useAppStore(s => s.archiveChat);
-  const deleteChat       = useAppStore(s => s.deleteChat);
-  const moveChatToFolder = useAppStore(s => s.moveChatToFolder);
   const createFolder     = useAppStore(s => s.createFolder);
   const renameFolder     = useAppStore(s => s.renameFolder);
   const deleteFolder     = useAppStore(s => s.deleteFolder);
@@ -133,6 +132,10 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   const [dropTarget, setDropTarget]                 = useState<DropTarget | null>(null);
   const dragHoldTimer                               = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragStateRef                                = useRef<DragState | null>(null);
+  const dropTargetRef                               = useRef<DropTarget | null>(null);
+  // Ref so the async mouseUp handler always reads the current value (avoids stale closure)
+  const showArchivedRef                             = useRef(showArchived);
+  const selectModeRef                               = useRef(selectMode);
 
   // ── toast helper ────────────────────────────────────────────────────
   const showToast = useCallback((message: string, undoIds?: number[]) => {
@@ -156,6 +159,10 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   const menuRef            = useRef<HTMLDivElement>(null);
   const searchInputRef     = useRef<HTMLInputElement>(null);
   const isCommittingNewWorkspace = useRef(false);
+
+  // ── keep refs in sync ───────────────────────────────────────────
+  useEffect(() => { showArchivedRef.current = showArchived; }, [showArchived]);
+  useEffect(() => { selectModeRef.current   = selectMode;   }, [selectMode]);
 
   // ── focus helpers ────────────────────────────────────────────────
   useEffect(() => { if (renamingChatId)   renameInputRef.current?.focus();  }, [renamingChatId]);
@@ -262,21 +269,38 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   };
 
   // ── Context menu open ──────────────────────────────────────────
+  // When a selected chat is right-clicked: operate on the whole selection.
+  // When a non-selected chat is right-clicked: clear selection, select only it.
   const openContextMenu = (e: React.MouseEvent, chat: Chat) => {
     e.preventDefault();
     e.stopPropagation();
     const viewportW = window.innerWidth;
     const viewportH = window.innerHeight;
-    const menuW = 180;
-    const menuH = 180;
+    const menuW = 200;
+    const menuH = 220;
     const x = Math.min(e.clientX, viewportW - menuW - 8);
     const y = Math.min(e.clientY, viewportH - menuH - 8);
+
+    // Selection-awareness
+    if (selectMode && !selectedIds.has(chat.id!)) {
+      // Right-clicked on non-selected chat — clear selection, target only this chat
+      setSelectedIds(new Set([chat.id!]));
+      setLastSelectedId(chat.id!);
+    } else if (!selectMode) {
+      // Not in select mode at all — just single-chat menu
+    }
+
     setContextMenu({ chat, x, y, subMenuOpen: false, subMenuX: 0, subMenuY: 0 });
   };
 
   // ── Context menu actions ────────────────────────────────────────
+  // Returns true if operating on a multi-selection (the right-clicked chat is in the selection)
+  const ctxIsMulti = () => contextMenu != null && selectMode && selectedIds.has(contextMenu.chat.id!) && selectedIds.size > 1;
+  const ctxIds     = () => ctxIsMulti() ? Array.from(selectedIds) : (contextMenu ? [contextMenu.chat.id!] : []);
+
   const ctxRename = () => {
     if (!contextMenu) return;
+    // Rename only works for single chat
     setRenamingChatId(contextMenu.chat.id ?? null);
     setRenameValue(contextMenu.chat.title);
     closeMenu();
@@ -284,19 +308,24 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
 
   const ctxArchive = async () => {
     if (!contextMenu) return;
-    const { chat } = contextMenu;
+    const ids = ctxIds();
     closeMenu();
-    await archiveChat(chat.id!, !chat.archived);
+    await bulkArchiveChats(ids, !showArchived);
+    const verb = showArchived ? 'unarchived' : 'archived';
+    showToast(`${ids.length} chat${ids.length > 1 ? 's' : ''} ${verb}.`);
+    if (ctxIsMulti()) exitSelectMode();
   };
 
   const ctxDelete = async () => {
     if (!contextMenu) return;
-    const { chat } = contextMenu;
-    const chatId = chat.id!;
+    const ids = ctxIds();
+    const isMulti = ctxIsMulti();
+    const label = isMulti ? `${ids.length} chats` : `"${contextMenu.chat.title}"`;
     closeMenu();
-    if (confirm(`Move "${chat.title}" to Trash?`)) {
-      await deleteChat(chatId);
-      showToast('Moved to Trash.', [chatId]);
+    if (confirm(`Move ${label} to Trash?`)) {
+      await bulkDeleteChats(ids);
+      showToast(`Moved to Trash (${ids.length} chat${ids.length > 1 ? 's' : ''}).`, ids);
+      if (isMulti) exitSelectMode();
     }
   };
 
@@ -313,16 +342,20 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
 
   const ctxMoveToFolder = async (folderId: number | null) => {
     if (!contextMenu) return;
-    const chatId = contextMenu.chat.id!;
+    const ids = ctxIds();
+    const isMulti = ctxIsMulti();
     closeMenu();
-    await moveChatToFolder(chatId, folderId);
+    await bulkMoveChats(ids, folderId);
+    if (isMulti) exitSelectMode();
   };
 
   const ctxRemoveFromFolder = async () => {
     if (!contextMenu) return;
-    const chatId = contextMenu.chat.id!;
+    const ids = ctxIds();
+    const isMulti = ctxIsMulti();
     closeMenu();
-    await moveChatToFolder(chatId, null);
+    await bulkMoveChats(ids, null);
+    if (isMulti) exitSelectMode();
   };
 
   // ── Chat rename (inline) ────────────────────────────────────────
@@ -393,6 +426,51 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
     setFolderMenuTarget({ folder, x: e.clientX, y: e.clientY });
   };
 
+  const getVisibleFolderChats = (folderId: number) => {
+    return chats.filter(c => c.folder_id === folderId && c.archived === showArchived);
+  };
+
+  const ctxWorkspaceSelectAll = () => {
+    if (!folderMenuTarget) return;
+    const folderChats = getVisibleFolderChats(folderMenuTarget.folder.id);
+    const newSelection = new Set(selectedIds);
+    folderChats.forEach(c => newSelection.add(c.id!));
+    setSelectedIds(newSelection);
+    setSelectMode(true);
+    setFolderMenuTarget(null);
+  };
+
+  const ctxWorkspaceUngroupAll = async () => {
+    if (!folderMenuTarget) return;
+    const folderChats = getVisibleFolderChats(folderMenuTarget.folder.id);
+    if (folderChats.length === 0) return setFolderMenuTarget(null);
+    const ids = folderChats.map(c => c.id!);
+    setFolderMenuTarget(null);
+    await bulkMoveChats(ids, null);
+  };
+
+  const ctxWorkspaceArchiveAll = async () => {
+    if (!folderMenuTarget) return;
+    const folderChats = getVisibleFolderChats(folderMenuTarget.folder.id);
+    if (folderChats.length === 0) return setFolderMenuTarget(null);
+    const ids = folderChats.map(c => c.id!);
+    setFolderMenuTarget(null);
+    await bulkArchiveChats(ids, !showArchived);
+    showToast(`${ids.length} chat${ids.length > 1 ? 's' : ''} ${showArchived ? 'unarchived' : 'archived'}.`);
+  };
+
+  const ctxWorkspaceDeleteAll = async () => {
+    if (!folderMenuTarget) return;
+    const folderChats = getVisibleFolderChats(folderMenuTarget.folder.id);
+    if (folderChats.length === 0) return setFolderMenuTarget(null);
+    const ids = folderChats.map(c => c.id!);
+    setFolderMenuTarget(null);
+    if (confirm(`Move all ${ids.length} chats in this workspace to Trash?`)) {
+      await bulkDeleteChats(ids);
+      showToast(`Moved to Trash (${ids.length} chat${ids.length > 1 ? 's' : ''}).`, ids);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────
   // Multi-select logic
   // ─────────────────────────────────────────────────────────────────
@@ -408,12 +486,12 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   const handleChatClick = (
     e: React.MouseEvent,
     chat: Chat,
-    section: 'chats' | number, // 'chats' = ungrouped, number = folderId
+    section: 'chats' | number,
     sectionChats: Chat[],
   ) => {
     const id = chat.id!;
 
-    // Ctrl/Cmd click: toggle selection
+    // ─ Ctrl/Cmd click: toggle individual chat in/out of selection ────
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       setSelectMode(true);
@@ -427,7 +505,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
       return;
     }
 
-    // Shift click: range select within same section
+    // ─ Shift click: range-select within same section ─────────────────
     if (e.shiftKey && selectMode && lastSelectedId !== null && lastSelectedSection === section) {
       e.preventDefault();
       const ids = sectionChats.map(c => c.id!);
@@ -441,48 +519,27 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
           rangeIds.forEach(rid => next.add(rid));
           return next;
         });
+        // don't update lastSelectedId on shift-click (anchor stays fixed)
       }
       return;
     }
 
-    // Normal click in select mode: toggle
+    // ─ Normal click in select mode: select ONLY this chat (File Explorer) ──
     if (selectMode) {
       e.preventDefault();
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        next.has(id) ? next.delete(id) : next.add(id);
-        return next;
-      });
+      setSelectedIds(new Set([id]));
       setLastSelectedId(id);
       setLastSelectedSection(section);
       return;
     }
 
-    // Normal click: open chat
+    // ─ Normal click: open chat ───────────────────────────────────
     setActiveChat(id);
     setLastSelectedId(id);
     setLastSelectedSection(section);
   };
 
-  // ── Bulk actions ────────────────────────────────────────────────
-  const handleBulkMove = async (folderId: number | null) => {
-    const ids = Array.from(selectedIds);
-    setMoveSubMenuOpen(false);
-    await bulkMoveChats(ids, folderId);
-    exitSelectMode();
-  };
-
-  const handleBulkArchive = async () => {
-    const ids = Array.from(selectedIds);
-    await bulkArchiveChats(ids, !showArchived);
-    exitSelectMode();
-    showToast(`${ids.length} chat${ids.length > 1 ? 's' : ''} ${showArchived ? 'unarchived' : 'archived'}.`);
-  };
-
-  const requestBulkDelete = () => {
-    setBulkDeleteDialog({ count: selectedIds.size });
-  };
-
+  // ── Bulk actions (kept for workspace-level button use) ──────────────
   const confirmBulkDelete = async () => {
     const ids = Array.from(selectedIds);
     const count = ids.length;
@@ -525,18 +582,44 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
     };
 
     const onMouseUp = async () => {
+      // Read from refs to avoid stale closures (showArchived / selectMode change during drag)
+      const isArchived = showArchivedRef.current;
+      const isSelecting = selectModeRef.current;
+
       const ds = dragStateRef.current;
       if (dragHoldTimer.current) { clearTimeout(dragHoldTimer.current); dragHoldTimer.current = null; }
 
-      if (ds?.active && dropTarget) {
-        // Perform the move
-        const folderId = dropTarget.type === 'folder' ? dropTarget.folderId : null;
-        await moveChatToFolder(ds.chatId, folderId);
+      // Capture dropTarget from closure — it is set via React state synchronously on hover
+      const currentDropTarget = dropTargetRef.current;
+
+      if (ds?.active && currentDropTarget) {
+        if (currentDropTarget.type === 'archive') {
+          // ── Drop onto Archive button (normal view) → archive chats ──────
+          await bulkArchiveChats(ds.dragIds, true);
+          showToast(`${ds.dragIds.length} chat${ds.dragIds.length > 1 ? 's' : ''} archived.`);
+        } else if (currentDropTarget.type === 'unarchive') {
+          // ── Drop onto Active chats button (archived view) → unarchive ──
+          await bulkArchiveChats(ds.dragIds, false);
+          await bulkMoveChats(ds.dragIds, null);
+          showToast(`${ds.dragIds.length} chat${ds.dragIds.length > 1 ? 's' : ''} unarchived.`);
+        } else {
+          // ── Drop onto CHATS or a Workspace ──────────────────────────────
+          const folderId = currentDropTarget.type === 'folder' ? currentDropTarget.folderId : null;
+
+          if (isArchived) {
+            // Dragging from Archived view → unarchive first, then move
+            await bulkArchiveChats(ds.dragIds, false);
+          }
+          await bulkMoveChats(ds.dragIds, folderId);
+        }
+
+        if (isSelecting) exitSelectMode();
       }
 
       document.body.style.cursor = '';
       setDragState(null);
       setDropTarget(null);
+      dropTargetRef.current = null;
     };
 
     document.addEventListener('mousemove', onMouseMove);
@@ -545,21 +628,43 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
-  }, [dropTarget, moveChatToFolder]);
+  // dropTargetRef is a ref — not listed as dep. exitSelectMode is stable (useCallback).
+  // bulkArchiveChats/bulkMoveChats are stable store selectors.
+  }, [bulkArchiveChats, bulkMoveChats, exitSelectMode, showToast]);
 
   const onChatMouseDown = (e: React.MouseEvent, chat: Chat) => {
-    // Ignore in select mode, or when renaming, or right-click
-    if (selectMode || renamingChatId === chat.id || e.button !== 0) return;
-    // Ignore modifier keys (those are for multi-select)
+    // Ignore when renaming, or right-click
+    if (renamingChatId === chat.id || e.button !== 0) return;
+    // Ignore modifier keys — Ctrl/Shift handled by onClick (handleChatClick)
     if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    // Don't drag from checkbox clicks
+    if ((e.target as HTMLElement).closest(`.${styles.chatCheckbox}`)) return;
 
-    e.stopPropagation();
+    // In select mode: let onClick (handleChatClick) handle selection.
+    // Only stopPropagation outside select mode (normal click opens chat via mousedown).
+    if (!selectMode) {
+      e.stopPropagation();
+    }
 
     const startX = e.clientX;
     const startY = e.clientY;
 
+    // ─ Decide which ids to drag ──────────────────────────────────
+    // IMPORTANT: Do NOT call setSelectedIds here — that would destroy
+    // multi-selection on every mousedown. Just decide which ids the
+    // drag would carry IF the user holds long enough to arm the drag.
+    let dragIds: number[];
+    if (selectMode && selectedIds.has(chat.id!)) {
+      // Dragging a SELECTED chat → carry the whole selection
+      dragIds = Array.from(selectedIds);
+    } else {
+      // Either not in select mode, or dragging an unselected chat
+      // → drag only this single chat
+      dragIds = [chat.id!];
+    }
+
     const state: DragState = {
-      chatId: chat.id!,
+      dragIds,
       chat,
       armed: false,
       active: false,
@@ -579,7 +684,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   };
 
   const isDraggingActive = dragState?.active === true;
-  const draggingChatId   = dragState?.chatId ?? null;
+  const draggingDragIds  = dragState?.dragIds ?? [];
 
   // ─────────────────────────────────────────────────────────────────
   // Partition chats
@@ -615,7 +720,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
     const isActive      = chat.id === activeChatId;
     const isRenaming    = renamingChatId === chat.id;
     const isSelected    = selectedIds.has(chat.id!);
-    const isDraggingThis = draggingChatId === chat.id && isDraggingActive;
+    const isDraggingThis = isDraggingActive && draggingDragIds.includes(chat.id!);
 
     let className = styles.chatItem;
     if (isActive)      className += ` ${styles.chatItemActive}`;
@@ -627,7 +732,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
         key={chat.id}
         className={className}
         onClick={e => !isRenaming && handleChatClick(e, chat, section, sectionChats)}
-        onContextMenu={e => !selectMode && openContextMenu(e, chat)}
+        onContextMenu={e => openContextMenu(e, chat)}
         onMouseDown={e => onChatMouseDown(e, chat)}
       >
         {selectMode && (
@@ -659,22 +764,45 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
 
   const onDropZoneEnter = (target: DropTarget) => {
     if (!isDraggingActive) return;
-    // Don't allow dropping onto the same folder the chat is already in
-    const currentFolderId = dragState?.chat.folder_id ?? null;
-    if (target.type === 'folder' && target.folderId === currentFolderId) return;
-    if (target.type === 'chats' && currentFolderId === null) return;
+    const isArchived = showArchivedRef.current;
+
+    if (isArchived) {
+      // In archived view: only 'chats', 'folder', and 'unarchive' zones are valid
+      if (target.type === 'archive') return; // can't archive already-archived
+    } else {
+      // Normal view: block same-folder drops only
+      if (target.type === 'unarchive') return; // only valid in archived view
+      if (target.type === 'folder') {
+        const allInFolder = dragState?.dragIds.every(id => {
+          const c = chats.find(ch => ch.id === id);
+          return c?.folder_id === target.folderId;
+        }) ?? false;
+        if (allInFolder) return;
+      }
+      if (target.type === 'chats') {
+        const allUngrouped = dragState?.dragIds.every(id => {
+          const c = chats.find(ch => ch.id === id);
+          return c?.folder_id == null;
+        }) ?? false;
+        if (allUngrouped) return;
+      }
+    }
     setDropTarget(target);
+    dropTargetRef.current = target;
   };
 
   const onDropZoneLeave = () => {
     if (!isDraggingActive) return;
     setDropTarget(null);
+    dropTargetRef.current = null;
   };
 
   const isDropTarget = (target: DropTarget): boolean => {
     if (!dropTarget) return false;
-    if (target.type === 'chats' && dropTarget.type === 'chats') return true;
-    if (target.type === 'folder' && dropTarget.type === 'folder') return dropTarget.folderId === target.folderId;
+    if (target.type === 'archive'   && dropTarget.type === 'archive')   return true;
+    if (target.type === 'unarchive' && dropTarget.type === 'unarchive') return true;
+    if (target.type === 'chats'     && dropTarget.type === 'chats')     return true;
+    if (target.type === 'folder'    && dropTarget.type === 'folder')    return dropTarget.folderId === target.folderId;
     return false;
   };
 
@@ -833,6 +961,31 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
                     <span className={styles.emptySearchText}>No matches found</span>
                   </div>
                 )}
+
+                {/* Drop targets shown during drag to allow unarchiving into specific destinations */}
+                {isDraggingActive && (
+                  <div className={styles.archiveDropTargets}>
+                    <div className={styles.archiveDropHint}>Drop to unarchive into:</div>
+                    <div
+                      className={`${styles.archiveDropZone} ${isDropTarget({ type: 'chats' }) ? styles.dropTargetActive : ''}`}
+                      onMouseEnter={() => onDropZoneEnter({ type: 'chats' })}
+                      onMouseLeave={onDropZoneLeave}
+                    >
+                      <MessageSquare size={13} /> Chats
+                    </div>
+                    {folders.map(f => (
+                      <div
+                        key={f.id}
+                        className={`${styles.archiveDropZone} ${isDropTarget({ type: 'folder', folderId: f.id }) ? styles.dropTargetActive : ''}`}
+                        onMouseEnter={() => onDropZoneEnter({ type: 'folder', folderId: f.id })}
+                        onMouseLeave={onDropZoneLeave}
+                      >
+                        <FolderIcon size={13} /> {f.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {visibleChats.length === 0 ? (
                   !searchQuery && (
                     <div style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
@@ -1014,82 +1167,33 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
             )}
           </div>
 
-          {/* Bottom actions OR Selection action bar */}
-          {selectMode ? (
-            <div className={styles.selectionBar}>
-              <div className={styles.selectionBarInfo}>
+          {/* Bottom actions — always visible (no longer replaced by selection bar) */}
+          <div className={styles.bottomActions}>
+            {selectMode && selectedIds.size > 0 && (
+              <div className={styles.selectionHint}>
                 <span>{selectedIds.size} selected</span>
-                <button className={styles.selectionBarClearBtn} onClick={exitSelectMode} title="Clear selection (Esc)">
-                  <X size={14} />
-                </button>
+                <button className={styles.selectionHintClear} onClick={exitSelectMode} title="Clear (Esc)"><X size={12} /></button>
               </div>
-              <div className={styles.selectionBarActions}>
-                {/* Move to Workspace */}
-                <div className={styles.selectionActionWrapper}>
-                  <button
-                    className={styles.selectionActionBtn}
-                    disabled={selectedIds.size === 0}
-                    onClick={() => setMoveSubMenuOpen(p => !p)}
-                    title="Move to workspace"
-                  >
-                    <MoveRight size={15} />
-                    Move
-                  </button>
-                  {moveSubMenuOpen && (
-                    <div className={styles.selectionMoveMenu}>
-                      <button className={styles.selectionMoveItem} onClick={() => handleBulkMove(null)}>
-                        <X size={13} /> Chats (ungrouped)
-                      </button>
-                      {folders.map(f => (
-                        <button key={f.id} className={styles.selectionMoveItem} onClick={() => handleBulkMove(f.id)}>
-                          <FolderIcon size={13} /> {f.name}
-                        </button>
-                      ))}
-                      {folders.length === 0 && (
-                        <div className={styles.selectionMoveEmpty}>No workspaces</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Archive / Unarchive */}
-                <button
-                  className={styles.selectionActionBtn}
-                  disabled={selectedIds.size === 0}
-                  onClick={handleBulkArchive}
-                  title={showArchived ? 'Unarchive selected' : 'Archive selected'}
-                >
-                  <Archive size={15} />
-                  {showArchived ? 'Unarchive' : 'Archive'}
-                </button>
-
-                {/* Delete */}
-                <button
-                  className={`${styles.selectionActionBtn} ${styles.selectionActionBtnDanger}`}
-                  disabled={selectedIds.size === 0}
-                  onClick={requestBulkDelete}
-                  title="Delete selected"
-                >
-                  <Trash2 size={15} />
-                  Delete
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className={styles.bottomActions}>
-              <button
-                className={styles.actionBtn}
-                onClick={() => { setShowArchived(!showArchived); setActiveChat(null); }}
-              >
-                <Archive size={18} />
-                {showArchived ? 'Active chats' : 'Archived chats'}
-              </button>
-              <button className={styles.actionBtn} onClick={() => setSettingsOpen(true)}>
-                <SettingsIcon size={18} />
-                Settings
-              </button>
-            </div>
-          )}
+            )}
+            <button
+              className={`${styles.actionBtn}
+                ${isDropTarget({ type: 'archive' })   ? styles.dropTargetActive : ''}
+                ${isDropTarget({ type: 'unarchive' }) ? styles.dropTargetActive : ''}
+                ${isDraggingActive && !showArchived    ? styles.dropTargetValid  : ''}
+                ${isDraggingActive && showArchived     ? styles.dropTargetValid  : ''}
+              `}
+              onClick={() => { setShowArchived(!showArchived); setActiveChat(null); }}
+              onMouseEnter={() => onDropZoneEnter(showArchived ? { type: 'unarchive' } : { type: 'archive' })}
+              onMouseLeave={onDropZoneLeave}
+            >
+              <Archive size={18} />
+              {showArchived ? 'Active chats' : 'Archived chats'}
+            </button>
+            <button className={styles.actionBtn} onClick={() => setSettingsOpen(true)}>
+              <SettingsIcon size={18} />
+              Settings
+            </button>
+          </div>
         </>
       )}
 
@@ -1100,8 +1204,17 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
           style={{ left: dragState.previewX + 12, top: dragState.previewY - 14 }}
           aria-hidden="true"
         >
-          <MessageSquare size={13} />
-          <span>{dragState.chat.title}</span>
+          {dragState.dragIds.length > 1 ? (
+            <>
+              <MessageSquare size={13} />
+              <span>Moving {dragState.dragIds.length} chats...</span>
+            </>
+          ) : (
+            <>
+              <MessageSquare size={13} />
+              <span>{dragState.chat.title}</span>
+            </>
+          )}
         </div>,
         document.body,
       )}
@@ -1113,13 +1226,23 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
           className={styles.contextMenu}
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
-          <button className={styles.contextMenuItem} onClick={ctxRename}>
-            <Pencil size={14} /> Rename
-          </button>
+          {/* Selection badge */}
+          {ctxIsMulti() && (
+            <div className={styles.ctxSelectionBadge}>{selectedIds.size} chats selected</div>
+          )}
+
+          {/* Rename: only available for single chat */}
+          {!ctxIsMulti() && (
+            <button className={styles.contextMenuItem} onClick={ctxRename}>
+              <Pencil size={14} /> Rename
+            </button>
+          )}
+
           <button className={styles.contextMenuItem} onClick={ctxArchive}>
-            <Archive size={14} /> {contextMenu.chat.archived ? 'Unarchive' : 'Archive'}
+            <Archive size={14} /> {showArchived ? 'Unarchive' : 'Archive'}{ctxIsMulti() ? ' all selected' : ''}
           </button>
-          {!showArchived && contextMenu.chat.folder_id != null && (() => {
+
+          {!showArchived && !ctxIsMulti() && contextMenu.chat.folder_id != null && (() => {
             const folder = folders.find(f => f.id === contextMenu.chat.folder_id);
             return (
               <button className={styles.contextMenuItem} onClick={ctxRemoveFromFolder}>
@@ -1127,21 +1250,23 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
               </button>
             );
           })()}
+
           {!showArchived && (
             <div
               className={`${styles.contextMenuItem} ${styles.contextMenuSub}`}
               onMouseEnter={openMoveSubMenu}
             >
-              <FolderIcon size={14} /> Move to Workspace
+              <FolderIcon size={14} /> {ctxIsMulti() ? 'Move all to Workspace' : 'Move to Workspace'}
               <ChevronRight size={12} style={{ marginLeft: 'auto' }} />
             </div>
           )}
+
           <div className={styles.contextMenuDivider} />
           <button
             className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`}
             onClick={ctxDelete}
           >
-            <Trash2 size={14} /> Delete
+            <Trash2 size={14} /> {ctxIsMulti() ? `Delete ${selectedIds.size} chats` : 'Delete'}
           </button>
         </div>,
         document.body,
@@ -1190,9 +1315,28 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
               setFolderMenuTarget(null);
             }}
           >
-            <Pencil size={14} /> Rename
+            <Pencil size={14} /> Rename Workspace
           </button>
           <div className={styles.contextMenuDivider} />
+          
+          <button className={styles.contextMenuItem} onClick={ctxWorkspaceSelectAll}>
+            <CheckSquare size={14} /> Select All Chats
+          </button>
+          <button className={styles.contextMenuItem} onClick={ctxWorkspaceUngroupAll}>
+            <X size={14} /> Move All to Chats
+          </button>
+          <button className={styles.contextMenuItem} onClick={ctxWorkspaceArchiveAll}>
+            <Archive size={14} /> {showArchived ? 'Unarchive All' : 'Archive All'}
+          </button>
+          
+          <div className={styles.contextMenuDivider} />
+          
+          <button
+            className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`}
+            onClick={ctxWorkspaceDeleteAll}
+          >
+            <Trash2 size={14} /> Delete All to Trash
+          </button>
           <button
             className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`}
             onClick={() => {

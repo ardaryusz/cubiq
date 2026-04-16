@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from './store';
 import Sidebar from './components/Sidebar/Sidebar';
 import ChatArea from './components/Chat/ChatArea';
@@ -30,6 +31,13 @@ function App() {
   const dragStartWidth = useRef(sidebarWidth);
 
   useEffect(() => { initialize(); }, [initialize]);
+
+  // Set tray icon ONCE at startup based on OS color scheme (no listener).
+  // Dark OS → light logo; Light OS → dark logo.
+  useEffect(() => {
+    const mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    invoke('set_tray_icon_mode', { mode }).catch(() => {});
+  }, []);
 
   // ── Global Ctrl+N shortcut: new draft chat ────────────────────
   useEffect(() => {

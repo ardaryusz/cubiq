@@ -1030,3 +1030,99 @@ pub fn purge_expired_deleted_chats(state: State<'_, AppState>) -> Result<(), Str
     let db = state.db.lock().unwrap();
     crate::db::purge_expired_deleted_chats(&db).map_err(|e| e.to_string())
 }
+
+#[derive(serde::Deserialize)]
+pub struct EphemeralMsg {
+    pub role: String,
+    pub content: String,
+}
+
+#[tauri::command]
+pub async fn send_ephemeral_message(messages: Vec<EphemeralMsg>, state: State<'_, AppState>) -> Result<String, String> {
+    let api_key: String = {
+        let db = state.db.lock().unwrap();
+        db.query_row("SELECT api_key FROM settings WHERE id = 1", (), |row| row.get(0)).map_err(|e| e.to_string())?
+    };
+    if api_key.trim().is_empty() {
+        return Err("API key is not set".to_string());
+    }
+
+    let preset = {
+        let db = state.db.lock().unwrap();
+        db.query_row(
+            "SELECT model_url, model_name, customization_prompt FROM presets WHERE name LIKE '%Cubiquick%' LIMIT 1",
+            (),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+        ).ok()
+    };
+
+    let (model_url, model_name, customization_prompt) = match preset {
+        Some(p) => p,
+        None => {
+            let db = state.db.lock().unwrap();
+            let url: String = db.query_row("SELECT model_url FROM settings WHERE id = 1", (), |row| row.get(0)).unwrap_or_default();
+            let model: String = db.query_row("SELECT model_name FROM settings WHERE id = 1", (), |row| row.get(0)).unwrap_or_default();
+            (url, model, String::new())
+        }
+    };
+
+    let mut conversation: Vec<(String, String)> = Vec::new();
+    conversation.push(("system".to_string(), CUBIQ_IDENTITY_PROMPT.to_string()));
+    if !customization_prompt.is_empty() {
+        conversation.push(("system".to_string(), customization_prompt));
+    }
+    for m in messages {
+        conversation.push((m.role, m.content));
+    }
+
+    crate::ai::chat_completion(&api_key, &model_url, &model_name, conversation)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_main_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    } else {
+        // Create the window if it doesn't exist
+        let _ = tauri::WebviewWindowBuilder::new(
+            &app_handle,
+            "main",
+            tauri::WebviewUrl::App("index.html".into())
+        )
+        .title("Cubiq")
+        .inner_size(1100.0, 720.0)
+        .min_inner_size(720.0, 500.0)
+        .resizable(true)
+        .maximized(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn quit_app(app_handle: tauri::AppHandle) {
+    app_handle.exit(0);
+}
+
+// Tray icon is set once at startup via JS matchMedia → set_tray_icon_mode.
+// sync_quickask_theme is kept as a no-op so any stale frontend calls don't error.
+#[tauri::command]
+pub fn sync_quickask_theme(_app_handle: tauri::AppHandle, _app_theme: String) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_tray_icon_mode(app_handle: tauri::AppHandle, mode: String) -> Result<(), String> {
+    crate::tray::set_tray_icon_from_mode(&app_handle, &mode).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_quickask_pinned(pinned: bool) {
+    crate::tray::QUICKASK_PINNED.store(pinned, std::sync::atomic::Ordering::SeqCst);
+}

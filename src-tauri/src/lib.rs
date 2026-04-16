@@ -2,6 +2,8 @@ pub mod db;
 pub mod models;
 pub mod commands;
 pub mod ai;
+pub mod tray;
+pub mod hotkey;
 
 use commands::AppState;
 use tauri::Manager;
@@ -23,6 +25,10 @@ pub fn run() {
       app.manage(AppState {
           db: std::sync::Mutex::new(db),
       });
+
+      app.handle().plugin(tauri_plugin_positioner::init())?;
+      crate::tray::create_tray(app.handle())?;
+      crate::hotkey::setup_hotkeys(app.handle())?;
 
       Ok(())
     })
@@ -68,6 +74,12 @@ pub fn run() {
         commands::restore_chats,
         commands::delete_chats_permanently,
         commands::purge_expired_deleted_chats,
+        commands::send_ephemeral_message,
+        commands::open_main_window,
+        commands::sync_quickask_theme,
+        commands::set_tray_icon_mode,
+        commands::set_quickask_pinned,
+        commands::quit_app,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { Chat, DeletedChat, Folder, Settings, Preset } from '../types';
 import * as ipc from '../lib/ipc';
+import { emit } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 
 interface AppState {
   chats: Chat[];
@@ -250,6 +252,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       await ipc.updateSettings(settings);
       applyAppTheme(settings.app_theme);
       set({ settings });
+      // Broadcast theme change to all windows (QuickAsk picks this up live)
+      emit('cubiq:theme_changed', { app_theme: settings.app_theme }).catch(() => {});
+      // Update tray icon to match new theme
+      invoke('sync_quickask_theme', { appTheme: settings.app_theme }).catch(() => {});
     } catch (err: unknown) {
       set({ error: String(err) });
     }

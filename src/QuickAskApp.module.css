@@ -1,0 +1,307 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   QuickAskApp.module.css
+   All colours use the same CSS custom properties as the main Cubiq app
+   (defined in src/styles/global.css). No hardcoded hex values.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Outer shell ─────────────────────────────────────────────────────────────── */
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--border-medium);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  box-shadow: var(--shadow-modal);
+}
+
+/* ── Header / drag region ──────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background-color: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-medium);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+/* ── Header action buttons ─────────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  gap: 2px;
+}
+
+.iconButton {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.iconButton:hover {
+  background-color: var(--state-hover);
+  color: var(--text-primary);
+}
+
+.iconButton.active {
+  background-color: var(--accent-base);
+  color: var(--accent-text);
+}
+
+/* ── Messages area ─────────────────────────────────────────────────────────── */
+.messagesContainer {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background-color: var(--bg-app);
+}
+
+.emptyState {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  padding: 24px 0;
+}
+
+/* ── Message bubbles ───────────────────────────────────────────────────────── */
+.message {
+  max-width: 86%;
+  padding: 9px 13px;
+  border-radius: var(--radius-lg);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.message.user {
+  align-self: flex-end;
+  background-color: var(--accent-base);
+  color: var(--accent-text);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.message.assistant {
+  align-self: flex-start;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  border-bottom-left-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  max-width: 95%;
+  padding: 6px 10px;
+}
+
+/* Ensure markdown elements don't get clipped */
+.message.assistant :global(.markdown) {
+  overflow-x: auto;
+}
+
+.thinking {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* ── Error banner ──────────────────────────────────────────────────────────── */
+.errorBanner {
+  align-self: stretch;
+  background-color: color-mix(in srgb, var(--danger-color) 12%, transparent);
+  color: var(--danger-color);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 0.83rem;
+  border: 1px solid color-mix(in srgb, var(--danger-color) 30%, transparent);
+}
+
+.errorBanner button {
+  background: var(--danger-color);
+  color: var(--accent-text);
+  border: none;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+.errorBanner button:hover {
+  opacity: 0.85;
+}
+
+/* ── Input / composer ──────────────────────────────────────────────────────── */
+.inputArea {
+  padding: 10px;
+  background-color: var(--bg-sidebar);
+  border-top: 1px solid var(--border-medium);
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.textarea {
+  flex: 1;
+  background-color: var(--bg-composer);
+  color: var(--text-primary);
+  border: 1px solid var(--border-composer);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  resize: none;
+  min-height: 38px;
+  max-height: 120px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.textarea:focus {
+  border-color: var(--accent-base);
+}
+
+/* ── Send button ───────────────────────────────────────────────────────────── */
+.sendButton {
+  background-color: var(--accent-base);
+  color: var(--accent-text);
+  border: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  transition: background-color 0.15s, opacity 0.15s;
+}
+
+.sendButton:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+}
+
+.sendButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Confirmation Modal ── */
+.modalOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modalBox {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-modal);
+  width: 100%;
+  max-width: 320px;
+  animation: slideUp 0.2s ease-out;
+}
+
+.modalTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.modalContent {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.modalButton {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.cancelBtn {
+  background-color: var(--bg-composer);
+  color: var(--text-primary);
+  border: 1px solid var(--border-medium);
+}
+
+.cancelBtn:hover {
+  background-color: var(--state-hover);
+}
+
+.exitBtn {
+  background-color: var(--danger-color);
+  color: var(--accent-text);
+}
+
+.exitBtn:hover {
+  opacity: 0.9;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}

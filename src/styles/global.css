@@ -300,11 +300,15 @@
   scrollbar-color: var(--border-medium) transparent;
 }
 
+html {
+  height: 100%;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background-color: var(--bg-app);
   color: var(--text-primary);
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
   line-height: 1.5;
 }

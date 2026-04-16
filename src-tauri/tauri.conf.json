@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "cubiq",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.cubiq.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Cubiq",
         "width": 1100,
         "height": 720,
@@ -20,6 +21,18 @@
         "resizable": true,
         "fullscreen": false,
         "maximized": true
+      },
+      {
+        "label": "quickask",
+        "title": "Cubiq Quick Ask",
+        "width": 420,
+        "height": 550,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "visible": false,
+        "skipTaskbar": true,
+        "url": "index.html"
       }
     ],
     "security": {
@@ -35,6 +48,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "resources": [
+      "../src/assets/lightLogo.png",
+      "../src/assets/darkLogo.png"
     ]
   }
 }
