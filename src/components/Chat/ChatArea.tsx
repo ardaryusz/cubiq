@@ -1,13 +1,33 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useAppStore } from '../../store';
 import type { Message } from '../../types';
 import * as ipc from '../../lib/ipc';
-import { SendHorizonal, Trash2, Edit2, Archive, AlertCircle, Lock, ChevronDown } from 'lucide-react';
+import { SendHorizonal, Trash2, Edit2, Archive, AlertCircle, Lock, ChevronDown, Square } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import styles from './ChatArea.module.css';
 
 const LINE_HEIGHT = 24;   // px per line in the textarea
-const MAX_LINES   = 12;
+const MAX_LINES = 12;
+
+interface StreamDeltaPayload {
+  request_id: string;
+  delta: string;
+}
+
+interface StreamDonePayload {
+  request_id: string;
+}
+
+interface StreamErrorPayload {
+  request_id: string;
+  message: string;
+}
+
+let _requestCounter = 0;
+function nextRequestId() {
+  return `chat-${Date.now()}-${++_requestCounter}`;
+}
 
 function formatTimestamp(ms: number): string {
   const date = new Date(ms);
@@ -19,28 +39,50 @@ function formatTimestamp(ms: number): string {
 }
 
 export default function ChatArea() {
-  const activeChatId   = useAppStore(state => state.activeChatId);
-  const draftPresetId  = useAppStore(state => state.draftPresetId);
-  const chats          = useAppStore(state => state.chats);
-  const presets        = useAppStore(state => state.presets);
-  const renameChat     = useAppStore(state => state.renameChat);
-  const archiveChat    = useAppStore(state => state.archiveChat);
-  const deleteChat     = useAppStore(state => state.deleteChat);
-  const refreshChats   = useAppStore(state => state.refreshChats);
+  const activeChatId = useAppStore(state => state.activeChatId);
+  const draftPresetId = useAppStore(state => state.draftPresetId);
+  const chats = useAppStore(state => state.chats);
+  const presets = useAppStore(state => state.presets);
+  const renameChat = useAppStore(state => state.renameChat);
+  const archiveChat = useAppStore(state => state.archiveChat);
+  const deleteChat = useAppStore(state => state.deleteChat);
+  const refreshChats = useAppStore(state => state.refreshChats);
   const updateChatPreset = useAppStore(state => state.updateChatPreset);
-  const lockChatPreset   = useAppStore(state => state.lockChatPreset);
-  const startNewChat     = useAppStore(state => state.startNewChat);
+  const lockChatPreset = useAppStore(state => state.lockChatPreset);
+  const startNewChat = useAppStore(state => state.startNewChat);
 
-  const [messages, setMessages]             = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [sendError, setSendError]           = useState<string | null>(null);
-  const [input, setInput]                   = useState('');
-  const [isSending, setIsSending]           = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [input, setInput] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editTitleSrc, setEditTitleSrc]     = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef    = useRef<HTMLTextAreaElement>(null);
-  const loadingForChatRef = useRef<number | null>(null);
+  const [editTitleSrc, setEditTitleSrc] = useState('');
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const textareaRef        = useRef<HTMLTextAreaElement>(null);
+  const loadingForChatRef  = useRef<number | null>(null);
+  const activeRequestRef   = useRef<string | null>(null);
+  const accumulatorRef     = useRef('');
+  const streamChatIdRef    = useRef<number | null>(null);
+  const isStickyRef        = useRef(true);
+
+  // Placeholder message shown during streaming (not in DB).
+  // content = raw accumulated text (updated every delta for accumulation)
+  const [streamingMessage, setStreamingMessage] = useState<{ content: string; isStreaming: boolean } | null>(null);
+
+  // Throttled render text — drives the markdown renderer during streaming.
+  // We update it using requestAnimationFrame so it streams at 60fps smoothly
+  // instead of clumping into paragraphs.
+  const [renderText, setRenderText] = useState('');
+  const needsRenderRef = useRef(false);
+  const renderRafRef = useRef<number | null>(null);
+
+  // Helper to check if markdown contains an unclosed code fence
+  const hasUnclosedFence = (text: string) => {
+    const fences = text.match(/```/g);
+    return fences ? fences.length % 2 !== 0 : false;
+  };
 
   const activeChat = chats.find(c => c.id === activeChatId);
 
@@ -68,6 +110,115 @@ export default function ChatArea() {
     }
   }, [input]);
 
+  // ── cancel helper ───────────────────────────────────────────────────
+  const cancelActiveStream = useCallback(() => {
+    if (activeRequestRef.current) {
+      ipc.cancelStream(activeRequestRef.current).catch(() => { });
+      activeRequestRef.current = null;
+    }
+    setIsStreaming(false);
+    setStreamingMessage(null);
+    accumulatorRef.current = '';
+    streamChatIdRef.current = null;
+  }, []);
+
+  // ── stream event listeners ──────────────────────────────────
+  // Uses global listen() — backend uses app_handle.emit() (global broadcast).
+  useEffect(() => {
+    let cancelled = false;
+    const unlistens: UnlistenFn[] = [];
+
+    const setup = async () => {
+      const unDelta = await listen<StreamDeltaPayload>('cubiq:stream_delta', ({ payload }) => {
+        if (payload.request_id !== activeRequestRef.current) return;
+        accumulatorRef.current += payload.delta;
+
+        // RAF-throttled render + autoscroll (max ~60fps)
+        needsRenderRef.current = true;
+        if (!renderRafRef.current) {
+          renderRafRef.current = requestAnimationFrame(() => {
+            renderRafRef.current = null;
+            if (needsRenderRef.current) {
+              setRenderText(accumulatorRef.current);
+              needsRenderRef.current = false;
+            }
+            if (isStickyRef.current) {
+              const el = scrollContainerRef.current;
+              if (el) el.scrollTop = el.scrollHeight;
+            }
+          });
+        }
+      });
+
+      const unDone = await listen<StreamDonePayload>('cubiq:stream_done', async ({ payload }) => {
+        if (payload.request_id !== activeRequestRef.current) return;
+        const full = accumulatorRef.current;
+        const chatId = streamChatIdRef.current;
+        const requestId = activeRequestRef.current;
+
+        // Flush any pending render and do a final render
+        if (renderRafRef.current) {
+          cancelAnimationFrame(renderRafRef.current);
+          renderRafRef.current = null;
+        }
+        needsRenderRef.current = false;
+        setRenderText(full);
+        setStreamingMessage({ content: full, isStreaming: false });
+        activeRequestRef.current = null;
+        setIsStreaming(false);
+
+        if (chatId && requestId && full.trim()) {
+          try {
+            await ipc.finalizeChatStream(chatId, requestId, full);
+            await refreshChats();
+            if (loadingForChatRef.current === chatId) {
+              const msgs = await ipc.getMessages(chatId);
+              setMessages(msgs);
+              setStreamingMessage(null);
+              setRenderText('');
+            }
+          } catch (e) {
+            setSendError(`Failed to save response: ${String(e)}`);
+          }
+        } else {
+          setStreamingMessage(null);
+          setRenderText('');
+        }
+
+        accumulatorRef.current = '';
+        streamChatIdRef.current = null;
+        setTimeout(() => textareaRef.current?.focus(), 0);
+      });
+
+      const unError = await listen<StreamErrorPayload>('cubiq:stream_error', ({ payload }) => {
+        if (payload.request_id !== activeRequestRef.current) return;
+        if (renderRafRef.current) { cancelAnimationFrame(renderRafRef.current); renderRafRef.current = null; }
+        needsRenderRef.current = false;
+        setSendError(payload.message);
+        activeRequestRef.current = null;
+        accumulatorRef.current = '';
+        streamChatIdRef.current = null;
+        setIsStreaming(false);
+        setStreamingMessage(null);
+        setRenderText('');
+        setTimeout(() => textareaRef.current?.focus(), 0);
+      });
+
+      if (cancelled) {
+        unDelta(); unDone(); unError();
+      } else {
+        unlistens.push(unDelta, unDone, unError);
+      }
+    };
+
+    setup().catch(console.error);
+
+    return () => {
+      cancelled = true;
+      unlistens.forEach(fn => fn());
+    };
+  }, [refreshChats]);
+
   // ── load messages ───────────────────────────────────────────────────
   const loadMessages = useCallback(async (chatId: number) => {
     loadingForChatRef.current = chatId;
@@ -86,29 +237,44 @@ export default function ChatArea() {
 
   useEffect(() => {
     if (activeChatId !== null && activeChatId !== undefined) {
+      // Cancel any active stream when switching chats
+      cancelActiveStream();
       loadMessages(activeChatId);
     } else {
       loadingForChatRef.current = null;
+      cancelActiveStream();
       setMessages([]);
       setSendError(null);
       setIsLoadingMessages(false);
     }
-    // We only reset input on actual chat switch, not when going to New Chat draft
-    // if the user wants to keep their draft text?
-    // Actually, user said: "Clicking New Chat... should not create anything... It should only switch UI to a draft/new chat state".
-    // I'll keep input reset for now to avoid confusion when clicking between chats.
     setInput('');
     setIsEditingTitle(false);
-  }, [activeChatId, loadMessages]);
+  }, [activeChatId, loadMessages, cancelActiveStream]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // ── scroll: snap to bottom instantly when messages load ────────────
+  useLayoutEffect(() => {
+    const el = scrollContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  // ── scroll: track stickiness via scroll events ────────────────────────
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const onScroll = () => {
+      const dist = el.scrollHeight - (el.scrollTop + el.clientHeight);
+      isStickyRef.current = dist < 150;
+    };
+
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
 
   // ── core send logic (takes an explicit chatId) ──────────────────────
   const doSend = async (chatId: number, content: string) => {
     setSendError(null);
-    setIsSending(true);
+    setIsStreaming(true);
     loadingForChatRef.current = chatId;
 
     try {
@@ -120,39 +286,49 @@ export default function ChatArea() {
 
       // 2. Add user message
       await ipc.addMessage(chatId, 'user', content);
-      
+
       // Update local state if we are still on this chat
       if (loadingForChatRef.current === chatId) {
         const msgs = await ipc.getMessages(chatId);
         setMessages(msgs);
       }
 
-      // 3. Trigger AI
-      await ipc.sendChatMessage(chatId);
-      
-      if (loadingForChatRef.current === chatId) {
-        const msgs = await ipc.getMessages(chatId);
-        setMessages(msgs);
-      }
+      // 3. Start streaming
+      const requestId = nextRequestId();
+      activeRequestRef.current = requestId;
+      accumulatorRef.current = '';
+      streamChatIdRef.current = chatId;
 
-      await refreshChats();
+      isStickyRef.current = true;
+      setStreamingMessage({ content: '', isStreaming: true });
+      setRenderText('');
+
+      // Force scroll to bottom on send
+      requestAnimationFrame(() => {
+        const el = scrollContainerRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+
+      await ipc.startChatStream(chatId, requestId);
     } catch (e) {
       setSendError(`${String(e)}`);
+      setIsStreaming(false);
+      setStreamingMessage(null);
+      activeRequestRef.current = null;
+      streamChatIdRef.current = null;
       if (loadingForChatRef.current === chatId) {
         try {
           const msgs = await ipc.getMessages(chatId);
           setMessages(msgs);
-        } catch (_) {}
+        } catch (_) { }
       }
-    } finally {
-      setIsSending(false);
       setTimeout(() => textareaRef.current?.focus(), 0);
     }
   };
 
   // ── handleSend: works from empty-state too ──────────────────────────
   const handleSend = async () => {
-    if (!input.trim() || isSending) return;
+    if (!input.trim() || isStreaming) return;
     const content = input.trim();
     setInput('');
 
@@ -161,13 +337,17 @@ export default function ChatArea() {
     } else {
       // Lazy Create: This is a draft chat.
       await startNewChat();
-      // startNewChat has updated activeChatId in the store. 
-      // But we need to call doSend for the ACTUAL AI flow.
       const newId = useAppStore.getState().activeChatId;
       if (newId) {
         doSend(newId, content);
       }
     }
+  };
+
+  const handleStop = () => {
+    cancelActiveStream();
+    // If there was partial content, we DON'T persist it (MVP behavior)
+    setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -242,15 +422,21 @@ export default function ChatArea() {
           onKeyDown={handleKeyDown}
           placeholder="Type your message…"
           rows={1}
-          disabled={isSending}
+          disabled={isStreaming}
         />
         <div className={styles.composerFooter}>
           <div className={styles.composerLeft}>
             {renderPresetSelector()}
           </div>
-          <button className={styles.sendBtn} onClick={handleSend} disabled={!input.trim() || isSending}>
-            <SendHorizonal size={20} />
-          </button>
+          {isStreaming ? (
+            <button className={`${styles.sendBtn} ${styles.stopBtn}`} onClick={handleStop} title="Stop generation">
+              <Square size={16} />
+            </button>
+          ) : (
+            <button className={styles.sendBtn} onClick={handleSend} disabled={!input.trim()}>
+              <SendHorizonal size={20} />
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -313,41 +499,78 @@ export default function ChatArea() {
         </div>
       )}
 
-      <div className={styles.messages}>
+      <div className={styles.messages} ref={scrollContainerRef}>
         {isLoadingMessages ? (
           <div className={styles.emptyState}><p>Loading messages…</p></div>
-        ) : messages.length === 0 ? (
+        ) : messages.length === 0 && !streamingMessage ? (
           <div className={styles.emptyState}><p>No messages yet. Send a message to start!</p></div>
         ) : (
-          messages.map((msg, i) => (
-            <div key={msg.id ?? i} className={`${styles.messageRow} ${msg.role === 'user' ? styles.user : styles.assistant}`}>
-              <div className={`${styles.messageContent} ${msg.role === 'user' ? styles.userContent : styles.assistantContent}`}>
-                {msg.role !== 'user' && (
-                  <div className={`${styles.avatar} ${styles.assistant}`}>AI</div>
-                )}
-                <div className={msg.role === 'user' ? styles.userBubbleWrap : styles.messageText}>
-                  <div className={msg.role === 'user' ? styles.userBubble : undefined}>
-                    {msg.role === 'user' ? msg.content : <MarkdownRenderer content={msg.content} />}
+          <>
+            {messages.map((msg, i) => (
+              <div key={msg.id ?? i} className={`${styles.messageRow} ${msg.role === 'user' ? styles.user : styles.assistant}`}>
+                <div className={`${styles.messageContent} ${msg.role === 'user' ? styles.userContent : styles.assistantContent}`}>
+                  {msg.role !== 'user' && (
+                    <div className={`${styles.avatar} ${styles.assistant}`}>AI</div>
+                  )}
+                  <div className={msg.role === 'user' ? styles.userBubbleWrap : styles.messageText}>
+                    <div className={msg.role === 'user' ? styles.userBubble : undefined}>
+                      {msg.role === 'user' ? msg.content : <MarkdownRenderer content={msg.content} />}
+                    </div>
+                    <span className={styles.timestamp}>{formatTimestamp(msg.created_at)}</span>
                   </div>
-                  <span className={styles.timestamp}>{formatTimestamp(msg.created_at)}</span>
                 </div>
               </div>
-            </div>
-          ))
-        )}
-        {isSending && (
-          <div className={`${styles.messageRow} ${styles.assistant}`}>
-            <div className={styles.messageContent}>
-              <div className={`${styles.avatar} ${styles.assistant}`}>AI</div>
-              <div className={styles.thinking}>
-                <span className={styles.dot} />
-                <span className={styles.dot} />
-                <span className={styles.dot} />
+            ))}
+
+            {/* Streaming assistant placeholder */}
+            {streamingMessage && (
+              <div className={`${styles.messageRow} ${styles.assistant}`}>
+                <div className={`${styles.messageContent} ${styles.assistantContent}`}>
+                  <div className={`${styles.avatar} ${styles.assistant}`}>AI</div>
+                  <div className={styles.messageText}>
+                    {streamingMessage.isStreaming ? (
+                      <div className={`${styles.streamingContent} ${styles.streamingAnchorNone}`}>
+                        {renderText ? (
+                          <>
+                            {/* Progressive markdown: renders throttled renderText so
+                                the markdown parser doesn't run every single token */}
+                            {hasUnclosedFence(renderText) ? (
+                              <pre style={{
+                                margin: 0,
+                                fontFamily: 'var(--font-mono, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace)',
+                                fontSize: '0.82rem',
+                                overflowX: 'auto',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'var(--bg-composer)',
+                                padding: '8px',
+                                border: '1px solid var(--border-medium)',
+                                whiteSpace: 'pre-wrap'
+                              }}>
+                                {renderText}
+                              </pre>
+                            ) : (
+                              <MarkdownRenderer content={renderText} />
+                            )}
+                            <span className={styles.streamCursor} />
+                          </>
+                        ) : (
+                          <div className={styles.thinking}>
+                            <span className={styles.dot} />
+                            <span className={styles.dot} />
+                            <span className={styles.dot} />
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <MarkdownRenderer content={streamingMessage.content} />
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
-        <div ref={messagesEndRef} />
+
       </div>
 
       {renderComposer()}

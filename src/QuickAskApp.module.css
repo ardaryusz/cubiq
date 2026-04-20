@@ -81,6 +81,13 @@
   flex-direction: column;
   gap: 10px;
   background-color: var(--bg-app);
+  
+  /* Prevents layout shift when scrollbar appears/disappears */
+  scrollbar-gutter: stable;
+
+  /* Browser-native scroll anchoring: keeps position stable when content
+     above the viewport changes (e.g. tokens arriving). */
+  overflow-anchor: auto;
 }
 
 .emptyState {
@@ -101,7 +108,6 @@
   font-size: 0.88rem;
   line-height: 1.5;
   word-wrap: break-word;
-  white-space: pre-wrap;
 }
 
 .message.user {
@@ -109,6 +115,7 @@
   background-color: var(--accent-base);
   color: var(--accent-text);
   border-bottom-right-radius: var(--radius-sm);
+  white-space: pre-wrap;
 }
 
 .message.assistant {
@@ -119,6 +126,17 @@
   border: 1px solid var(--border-light);
   max-width: 95%;
   padding: 6px 10px;
+}
+
+.message.assistant pre {
+  margin: 0;
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace);
+  font-size: 0.82rem;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--bg-composer);
+  padding: 8px;
+  border: 1px solid var(--border-medium);
 }
 
 /* Ensure markdown elements don't get clipped */
@@ -305,3 +323,39 @@
   from { transform: translateY(10px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+/* ── Streaming text + cursor ──────────────────────────────────────────────── */
+.streamingText {
+  word-break: break-word;
+  /* overflow-anchor:none tells browser NOT to anchor to this growing element */
+  overflow-anchor: none;
+}
+
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background-color: var(--accent-base);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: blink 0.8s step-end infinite;
+}
+
+.thinkingInline {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ── Stop button ──────────────────────────────────────────────────────────── */
+.stopButton {
+  background-color: var(--danger-color, #ef4444) !important;
+}
+.stopButton:hover {
+  opacity: 0.85;
+}
+

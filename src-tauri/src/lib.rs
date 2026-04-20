@@ -4,8 +4,10 @@ pub mod commands;
 pub mod ai;
 pub mod tray;
 pub mod hotkey;
+pub mod streaming;
 
 use commands::AppState;
+use streaming::StreamRegistry;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,6 +27,9 @@ pub fn run() {
       app.manage(AppState {
           db: std::sync::Mutex::new(db),
       });
+
+      // Shared stream cancellation registry
+      app.manage(StreamRegistry::new());
 
       app.handle().plugin(tauri_plugin_positioner::init())?;
       crate::tray::create_tray(app.handle())?;
@@ -80,6 +85,11 @@ pub fn run() {
         commands::set_tray_icon_mode,
         commands::set_quickask_pinned,
         commands::quit_app,
+        // Streaming
+        commands::start_ephemeral_stream,
+        commands::start_chat_stream,
+        commands::finalize_chat_stream,
+        commands::cancel_stream,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

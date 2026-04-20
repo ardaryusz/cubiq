@@ -1,16 +1,38 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { Pin, Trash2, ExternalLink, X } from 'lucide-react';
+import { Pin, Trash2, ExternalLink, X, Square } from 'lucide-react';
 import MarkdownRenderer from './components/Chat/MarkdownRenderer';
+import * as ipc from './lib/ipc';
 import styles from './QuickAskApp.module.css';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  isStreaming?: boolean;
+}
+
+interface StreamDeltaPayload {
+  request_id: string;
+  delta: string;
+}
+
+interface StreamDonePayload {
+  request_id: string;
+}
+
+interface StreamErrorPayload {
+  request_id: string;
+  message: string;
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
+
+let _requestCounter = 0;
+function nextRequestId() {
+  return `qa-${Date.now()}-${++_requestCounter}`;
+}
 
 function applyTheme(appTheme: string) {
   const root = document.documentElement;
@@ -27,7 +49,7 @@ async function syncTheme() {
     const settings = await invoke<{ app_theme: string }>('get_settings');
     if (settings?.app_theme) {
       applyTheme(settings.app_theme);
-      invoke('sync_quickask_theme', { appTheme: settings.app_theme }).catch(() => {});
+      invoke('sync_quickask_theme', { appTheme: settings.app_theme }).catch(() => { });
     }
   } catch (err) {
     console.warn('[Cubiquick] theme sync failed:', err);
@@ -37,69 +59,86 @@ async function syncTheme() {
 // ── component ──────────────────────────────────────────────────────────────────
 
 export default function QuickAskApp() {
-  const [messages, setMessages]       = useState<Message[]>([]);
-  const [input, setInput]             = useState('');
-  const [isPinned, setIsPinned]       = useState(false);
-  const [isLoading, setIsLoading]     = useState(false);
-  const [error, setError]             = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isPinned, setIsPinned] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const isPinnedRef    = useRef(isPinned);
+  const isPinnedRef = useRef(isPinned);
+  const activeRequestRef = useRef<string | null>(null);
+  const accumulatorRef = useRef('');
+  // Track registered unlisten functions so we can clean up properly
+  const unlistenFnsRef = useRef<UnlistenFn[]>([]);
 
-  // Keep ref in sync so blur/watcher closures always see current pinned state
+  // Throttled render text — drives the markdown renderer during streaming.
+  // We update it using requestAnimationFrame so it streams at 60fps smoothly
+  // instead of clumping into paragraphs.
+  const [renderText, setRenderText] = useState('');
+  const needsRenderRef = useRef(false);
+  const renderRafRef = useRef<number | null>(null);
+
+  // Helper to check if markdown contains an unclosed code fence
+  const hasUnclosedFence = (text: string) => {
+    const fences = text.match(/```/g);
+    return fences ? fences.length % 2 !== 0 : false;
+  };
+
+  // Keep isPinnedRef in sync
   useEffect(() => { isPinnedRef.current = isPinned; }, [isPinned]);
 
-  // ── clear + hide helper ────────────────────────────────────────────────────
-  const clearState = useCallback(() => {
+  // ── cancel helper ─────────────────────────────────────────────────────────
+  const cancelActiveStream = useCallback(() => {
+    const rid = activeRequestRef.current;
+    if (rid) {
+      ipc.cancelStream(rid).catch(() => { });
+      activeRequestRef.current = null;
+    }
+    setIsStreaming(false);
+  }, []);
+
+  // ── UI-only clear (messages/input/error, no stream cancel) ─────────────────
+  const clearUIState = useCallback(() => {
     setMessages([]);
     setInput('');
     setError(null);
+    accumulatorRef.current = '';
   }, []);
 
-  const dismissWindow = useCallback(() => {
-    clearState();
-    getCurrentWebviewWindow().hide();
-  }, [clearState]);
+  // ── full clear: cancel stream + reset UI ───────────────────────────────────
+  const clearAll = useCallback(() => {
+    cancelActiveStream();
+    clearUIState();
+  }, [cancelActiveStream, clearUIState]);
 
-  // ── sync pinned state to Rust when it changes ──────────────────────────────
+  const dismissWindow = useCallback(() => {
+    clearAll();
+    getCurrentWebviewWindow().hide();
+  }, [clearAll]);
+
+  // ── sync pinned state to Rust ──────────────────────────────────────────────
   useEffect(() => {
-    invoke('set_quickask_pinned', { pinned: isPinned }).catch(() => {});
+    invoke('set_quickask_pinned', { pinned: isPinned }).catch(() => { });
   }, [isPinned]);
 
-  // ── on mount: setup all event listeners ───────────────────────────────────
+  // ── EFFECT 1: window / keyboard / theme listeners ─────────────────────────
+  // These may re-register when deps change (that's OK, they don't carry stream state).
   useEffect(() => {
     const win = getCurrentWebviewWindow();
-
-    // Sync theme on first load
     syncTheme();
 
-    // Re-sync theme each time Rust shows the window (tray click or hotkey)
-    const unlistenShown = win.listen('quickask-shown', () => {
-      syncTheme();
-    });
-
-    // Live theme sync: main app emits this whenever the user picks a new theme
+    const unlistenShown = win.listen('quickask-shown', () => syncTheme());
     const unlistenThemeChanged = win.listen<{ app_theme: string }>('cubiq:theme_changed', ({ payload }) => {
-      if (payload?.app_theme) {
-        applyTheme(payload.app_theme);
-      }
+      if (payload?.app_theme) applyTheme(payload.app_theme);
     });
+    const unlistenClear = win.listen('quickask:clear', () => clearAll());
 
-    // ── MAIN click-away close mechanism ───────────────────────────────────
-    // Rust's focus watcher emits "quickask:clear" before hiding the window.
-    // We just need to reset React state here — the window is already gone.
-    const unlistenClear = win.listen('quickask:clear', () => {
-      clearState();
-    });
-
-    // ── Fast-path: JS window blur (fires immediately when focus leaves) ───
-    // Best-effort on Windows with alwaysOnTop — if it fires we get <16ms
-    // latency instead of waiting up to 70ms for the Rust poller.
     const onWindowBlur = () => {
       setTimeout(() => {
         if (!isPinnedRef.current) {
-          clearState();
+          clearAll();
           win.hide();
         }
       }, 0);
@@ -107,9 +146,7 @@ export default function QuickAskApp() {
     window.addEventListener('blur', onWindowBlur);
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        dismissWindow();
-      }
+      if (e.key === 'Escape') dismissWindow();
     };
     window.addEventListener('keydown', onKeyDown);
 
@@ -120,35 +157,189 @@ export default function QuickAskApp() {
       unlistenClear.then(f => f());
       unlistenThemeChanged.then(f => f());
     };
-  }, [clearState, dismissWindow]);
+  }, [clearAll, dismissWindow]);
+
+  // ── EFFECT 2: streaming event listeners — mount ONCE, stay alive ───────────
+  // Uses the GLOBAL listen() from @tauri-apps/api/event.
+  // Why: backend uses app_handle.emit_to(label) → EventTarget::AnyLabel.
+  // win.listen() filters for EventTarget::WebviewWindow — a different variant
+  // in Tauri v2's event system, causing events to be silently dropped.
+  // The global listen() in this webview receives AnyLabel-targeted events correctly.
+  useEffect(() => {
+    let cancelled = false;
+    const unlistens: UnlistenFn[] = [];
+
+    const setup = async () => {
+      console.log('[QA] registering stream listeners via global listen()');
+      try {
+        const unDelta = await listen<StreamDeltaPayload>('cubiq:stream_delta', ({ payload }) => {
+          console.log('[QA delta]', payload.request_id, 'active=', activeRequestRef.current,
+            'match=', payload.request_id === activeRequestRef.current,
+            'preview=', payload.delta.slice(0, 20));
+          if (payload.request_id !== activeRequestRef.current) return;
+
+          accumulatorRef.current += payload.delta;
+          const full = accumulatorRef.current;
+
+          // High-framerate markdown render and stream-following scroll (max ~60fps)
+          needsRenderRef.current = true;
+          if (!renderRafRef.current) {
+            renderRafRef.current = requestAnimationFrame(() => {
+              renderRafRef.current = null;
+              if (needsRenderRef.current) {
+                setRenderText(full);
+                needsRenderRef.current = false;
+              }
+              // QuickAsk scrolls to bottom continuously during streaming
+              messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+            });
+          }
+        });
+
+        const unDone = await listen<StreamDonePayload>('cubiq:stream_done', ({ payload }) => {
+          console.log('[QA done]', payload.request_id, 'active=', activeRequestRef.current);
+          if (payload.request_id !== activeRequestRef.current) return;
+
+          const full = accumulatorRef.current;
+
+          // Flush any pending render and do a final render
+          if (renderRafRef.current) {
+            cancelAnimationFrame(renderRafRef.current);
+            renderRafRef.current = null;
+          }
+          needsRenderRef.current = false;
+          setRenderText(full);
+
+          setMessages(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === 'assistant') {
+              updated[updated.length - 1] = { ...last, content: full, isStreaming: false };
+            }
+            return updated;
+          });
+          activeRequestRef.current = null;
+          accumulatorRef.current = '';
+          setIsStreaming(false);
+          // Don't clear renderText immediately so the bubble doesn't flicker
+          // It will be cleared on handleSend
+        });
+
+        const unError = await listen<StreamErrorPayload>('cubiq:stream_error', ({ payload }) => {
+          console.error('[QA error]', payload.request_id, 'active=', activeRequestRef.current, payload.message);
+          if (payload.request_id !== activeRequestRef.current) return;
+
+          setMessages(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === 'assistant' && last.isStreaming) updated.pop();
+            return updated;
+          });
+
+          if (renderRafRef.current) {
+            cancelAnimationFrame(renderRafRef.current);
+            renderRafRef.current = null;
+          }
+          needsRenderRef.current = false;
+
+          const msg = payload.message;
+          setError(msg.includes('API key is not set') ? 'missing_key' : msg);
+          activeRequestRef.current = null;
+          accumulatorRef.current = '';
+          setIsStreaming(false);
+          setRenderText('');
+        });
+
+        if (cancelled) {
+          // Effect cleanup ran before setup finished (React Strict Mode double-invoke)
+          unDelta(); unDone(); unError();
+          console.log('[QA] listeners cancelled before setup completed, cleaned up');
+        } else {
+          unlistens.push(unDelta, unDone, unError);
+          unlistenFnsRef.current = unlistens;
+          console.log('[QA] stream listeners registered OK');
+        }
+      } catch (err) {
+        console.error('[QA] Failed to register stream listeners:', err);
+      }
+    };
+
+    setup();
+
+    return () => {
+      cancelled = true;
+      // Immediately unregister any already-registered listeners
+      unlistens.forEach(fn => fn());
+      unlistenFnsRef.current = [];
+      console.log('[QA] stream listeners cleanup');
+    };
+  }, []); // ← empty deps: register once for the entire lifetime of the component
 
   // ── auto-scroll ────────────────────────────────────────────────────────────
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+    if (!isStreaming) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isStreaming]);
 
   // ── send message ───────────────────────────────────────────────────────────
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isStreaming) return;
 
     const newMessages: Message[] = [
       ...messages,
       { role: 'user', content: input.trim() },
     ];
-    setMessages(newMessages);
+
+    const requestId = nextRequestId();
+    // Set request ID ref FIRST — before any await — so the listener
+    // can match even if the first delta arrives before startEphemeralStream returns
+    activeRequestRef.current = requestId;
+    accumulatorRef.current = '';
+
+    // Add placeholder AFTER setting the ref (so the listener can find it)
+    setMessages([...newMessages, { role: 'assistant', content: '', isStreaming: true }]);
     setInput('');
-    setIsLoading(true);
+    setIsStreaming(true);
+    setRenderText(''); // Clear previous renderText
     setError(null);
 
+    console.log('[QA send] request_id=', requestId, 'listeners=', unlistenFnsRef.current.length);
+
     try {
-      const response = await invoke<string>('send_ephemeral_message', { messages: newMessages });
-      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+      const history = newMessages.map(m => ({ role: m.role, content: m.content }));
+      await ipc.startEphemeralStream(history, requestId);
+      console.log('[QA send] startEphemeralStream returned OK for', requestId);
     } catch (e: any) {
       const msg = typeof e === 'string' ? e : e?.message ?? String(e);
+      console.error('[QA send] startEphemeralStream error:', msg);
       setError(msg.includes('API key is not set') ? 'missing_key' : msg);
-    } finally {
-      setIsLoading(false);
+      setMessages(prev => {
+        const updated = [...prev];
+        const last = updated[updated.length - 1];
+        if (last && last.role === 'assistant' && last.isStreaming) updated.pop();
+        return updated;
+      });
+      activeRequestRef.current = null;
+      setIsStreaming(false);
     }
+  };
+
+  const handleStop = () => {
+    cancelActiveStream();
+    setMessages(prev => {
+      const updated = [...prev];
+      const last = updated[updated.length - 1];
+      if (last && last.role === 'assistant' && last.isStreaming) {
+        if (last.content.trim()) {
+          updated[updated.length - 1] = { ...last, isStreaming: false };
+        } else {
+          updated.pop();
+        }
+      }
+      return updated;
+    });
+    accumulatorRef.current = '';
   };
 
   const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -171,7 +362,7 @@ export default function QuickAskApp() {
         <div data-tauri-drag-region className={styles.title}>Cubiquick</div>
 
         <div className={styles.actions}>
-          {/* Pin – suppresses click-away auto-close */}
+          {/* Pin */}
           <button
             className={`${styles.iconButton} ${isPinned ? styles.active : ''}`}
             onClick={() => setIsPinned(p => !p)}
@@ -184,7 +375,7 @@ export default function QuickAskApp() {
           {/* Clear */}
           <button
             className={styles.iconButton}
-            onClick={() => { setMessages([]); setError(null); }}
+            onClick={() => { cancelActiveStream(); clearUIState(); }}
             title="Clear conversation"
             aria-label="Clear conversation"
           >
@@ -192,16 +383,16 @@ export default function QuickAskApp() {
           </button>
 
           {/* Open full app */}
-          <button 
-            className={styles.iconButton} 
-            onClick={handleOpenMain} 
+          <button
+            className={styles.iconButton}
+            onClick={handleOpenMain}
             title="Open Cubiq"
             aria-label="Open main application"
           >
             <ExternalLink size={16} />
           </button>
 
-          {/* Explicit close (always works, even if blur watcher doesn't fire) */}
+          {/* Explicit close */}
           <button
             className={styles.iconButton}
             onClick={() => setShowExitConfirm(true)}
@@ -222,13 +413,13 @@ export default function QuickAskApp() {
               This will close Cubiquick and the main application entirely.
             </div>
             <div className={styles.modalActions}>
-              <button 
+              <button
                 className={`${styles.modalButton} ${styles.cancelBtn}`}
                 onClick={() => setShowExitConfirm(false)}
               >
                 Cancel
               </button>
-              <button 
+              <button
                 className={`${styles.modalButton} ${styles.exitBtn}`}
                 onClick={() => invoke('quit_app')}
               >
@@ -241,7 +432,7 @@ export default function QuickAskApp() {
 
       {/* ── Messages ── */}
       <div className={styles.messagesContainer}>
-        {messages.length === 0 && !isLoading && !error && (
+        {messages.length === 0 && !isStreaming && !error && (
           <div className={styles.emptyState}>How can I help you?</div>
         )}
 
@@ -252,17 +443,24 @@ export default function QuickAskApp() {
           >
             {msg.role === 'user' ? (
               msg.content
+            ) : msg.isStreaming ? (
+              <span className={styles.streamingText}>
+                {renderText ? (
+                  hasUnclosedFence(renderText) ? (
+                    <pre style={{ whiteSpace: 'pre-wrap', fontStyle: 'inherit' }}>{renderText}</pre>
+                  ) : (
+                    <MarkdownRenderer content={renderText} />
+                  )
+                ) : (
+                  <span className={styles.thinkingInline}>Thinking…</span>
+                )}
+                <span className={styles.cursor} />
+              </span>
             ) : (
               <MarkdownRenderer content={msg.content} />
             )}
           </div>
         ))}
-
-        {isLoading && (
-          <div className={`${styles.message} ${styles.assistant} ${styles.thinking}`}>
-            Thinking…
-          </div>
-        )}
 
         {error && (
           <div className={styles.errorBanner}>
@@ -291,13 +489,23 @@ export default function QuickAskApp() {
           rows={1}
           autoFocus
         />
-        <button
-          className={styles.sendButton}
-          onClick={handleSend}
-          disabled={!input.trim() || isLoading}
-        >
-          ↑
-        </button>
+        {isStreaming ? (
+          <button
+            className={`${styles.sendButton} ${styles.stopButton}`}
+            onClick={handleStop}
+            title="Stop generation"
+          >
+            <Square size={16} />
+          </button>
+        ) : (
+          <button
+            className={styles.sendButton}
+            onClick={handleSend}
+            disabled={!input.trim()}
+          >
+            ↑
+          </button>
+        )}
       </div>
     </div>
   );

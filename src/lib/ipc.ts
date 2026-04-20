@@ -93,3 +93,23 @@ export const getDeletedChats = () => invoke<DeletedChat[]>('get_deleted_chats');
 export const restoreChats = (ids: number[]) => invoke<void>('restore_chats', { ids });
 export const deleteChatsPermananently = (ids: number[]) => invoke<void>('delete_chats_permanently', { ids });
 export const purgeExpiredDeletedChats = () => invoke<void>('purge_expired_deleted_chats');
+
+// ── Streaming ─────────────────────────────────────────────────────────
+
+export interface EphemeralMessage {
+    role: string;
+    content: string;
+}
+
+export const startEphemeralStream = (messages: EphemeralMessage[], requestId: string) =>
+    invoke<void>('start_ephemeral_stream', { messages, requestId });
+
+export const startChatStream = (chatId: number, requestId: string) =>
+    invoke<void>('start_chat_stream', { chatId, requestId });
+
+export const finalizeChatStream = (chatId: number, requestId: string, fullContent: string) =>
+    invoke<void>('finalize_chat_stream', { chatId, requestId, fullContent });
+
+export const cancelStream = (requestId: string) =>
+    invoke<void>('cancel_stream', { requestId });
+

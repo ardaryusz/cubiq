@@ -24,7 +24,10 @@ log = "0.4"
 tauri = { version = "2.10.3", features = ["tray-icon", "image-png", "image-ico"] }
 tauri-plugin-log = "2"
 rusqlite = { version = "0.31", features = ["bundled"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+tokio = { version = "1", features = ["rt", "macros", "sync"] }
+tokio-util = "0.7"
+futures-util = "0.3"
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-positioner = { version = "2.3.1", features = ["tray-icon"] }

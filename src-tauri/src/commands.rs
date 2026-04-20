@@ -1126,3 +1126,267 @@ pub fn set_tray_icon_mode(app_handle: tauri::AppHandle, mode: String) -> Result<
 pub fn set_quickask_pinned(pinned: bool) {
     crate::tray::QUICKASK_PINNED.store(pinned, std::sync::atomic::Ordering::SeqCst);
 }
+
+// ── Streaming Commands ────────────────────────────────────────────────────
+
+/// Start a streaming ephemeral chat (QuickAsk / Cubiquick).
+/// No DB writes — everything is in-memory and emitted as events.
+#[tauri::command]
+pub async fn start_ephemeral_stream(
+    messages: Vec<EphemeralMsg>,
+    request_id: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+    registry: State<'_, crate::streaming::StreamRegistry>,
+) -> Result<(), String> {
+    let api_key: String = {
+        let db = state.db.lock().unwrap();
+        db.query_row("SELECT api_key FROM settings WHERE id = 1", (), |row| row.get(0))
+            .map_err(|e| e.to_string())?
+    };
+    if api_key.trim().is_empty() {
+        return Err("API key is not set. Please add your Groq API key in Settings.".to_string());
+    }
+
+    let preset = {
+        let db = state.db.lock().unwrap();
+        db.query_row(
+            "SELECT model_url, model_name, customization_prompt FROM presets WHERE name LIKE '%Cubiquick%' LIMIT 1",
+            (),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+        ).ok()
+    };
+
+    let (model_url, model_name, customization_prompt) = match preset {
+        Some(p) => p,
+        None => {
+            let db = state.db.lock().unwrap();
+            let url: String = db.query_row("SELECT model_url FROM settings WHERE id = 1", (), |row| row.get(0)).unwrap_or_default();
+            let model: String = db.query_row("SELECT model_name FROM settings WHERE id = 1", (), |row| row.get(0)).unwrap_or_default();
+            (url, model, String::new())
+        }
+    };
+
+    let mut conversation: Vec<(String, String)> = Vec::new();
+    conversation.push(("system".to_string(), CUBIQ_IDENTITY_PROMPT.to_string()));
+    if !customization_prompt.is_empty() {
+        conversation.push(("system".to_string(), customization_prompt));
+    }
+    for m in messages {
+        conversation.push((m.role, m.content));
+    }
+
+    let cancel_token = registry.register(&request_id);
+    let rid = request_id.clone();
+
+    let registry_inner = registry.inner().clone();
+
+    tokio::spawn(async move {
+        crate::streaming::run_stream(
+            app_handle,
+            "quickask".to_string(),
+            rid.clone(),
+            api_key,
+            model_url,
+            model_name,
+            conversation,
+            cancel_token,
+        )
+        .await;
+        registry_inner.remove(&rid);
+    });
+
+    Ok(())
+}
+
+/// Start a streaming chat message for the main app.
+/// Loads settings + chat snapshot from DB and streams to the "main" window.
+#[tauri::command]
+pub async fn start_chat_stream(
+    chat_id: i64,
+    request_id: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+    registry: State<'_, crate::streaming::StreamRegistry>,
+) -> Result<(), String> {
+    // 1. Read API key
+    let api_key: String = {
+        let db = state.db.lock().unwrap();
+        db.query_row("SELECT api_key FROM settings WHERE id = 1", (), |row| row.get(0))
+            .map_err(|e| e.to_string())?
+    };
+
+    // 2. Read chat snapshot
+    let (model_url, model_name, customization_prompt): (String, String, String) = {
+        let db = state.db.lock().unwrap();
+        let (snap_url, snap_model, snap_cust): (Option<String>, Option<String>, Option<String>) = db.query_row(
+            "SELECT model_url_snapshot, model_name_snapshot, customization_snapshot FROM chats WHERE id = ?1",
+            [&chat_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|e| e.to_string())?;
+
+        if snap_url.is_some() && snap_model.is_some() {
+            (snap_url.unwrap(), snap_model.unwrap(), snap_cust.unwrap_or_default())
+        } else {
+            let (url, model): (String, String) = db.query_row(
+                "SELECT model_url, model_name FROM settings WHERE id = 1",
+                (),
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).map_err(|e| e.to_string())?;
+            (url, model, String::new())
+        }
+    };
+
+    // 3. Build conversation
+    let mut conversation: Vec<(String, String)> = Vec::new();
+    conversation.push(("system".to_string(), CUBIQ_IDENTITY_PROMPT.to_string()));
+    if !customization_prompt.is_empty() {
+        conversation.push(("system".to_string(), customization_prompt));
+    }
+
+    {
+        let db = state.db.lock().unwrap();
+        let mut stmt = db
+            .prepare("SELECT role, content FROM messages WHERE chat_id = ?1 ORDER BY created_at ASC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([&chat_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+
+        for row in rows {
+            let (role, content) = row.map_err(|e| e.to_string())?;
+            conversation.push((role, content));
+        }
+    }
+
+    let cancel_token = registry.register(&request_id);
+    let rid = request_id.clone();
+
+    let registry_inner = registry.inner().clone();
+
+    tokio::spawn(async move {
+        crate::streaming::run_stream(
+            app_handle,
+            "main".to_string(),
+            rid.clone(),
+            api_key,
+            model_url,
+            model_name,
+            conversation,
+            cancel_token,
+        )
+        .await;
+        registry_inner.remove(&rid);
+    });
+
+    Ok(())
+}
+
+/// Finalize a chat stream: persist the assistant message and trigger auto-title.
+/// Called by the frontend when stream_done is received.
+#[tauri::command]
+pub async fn finalize_chat_stream(
+    chat_id: i64,
+    _request_id: String,
+    full_content: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if full_content.trim().is_empty() {
+        return Ok(()); // Don't persist empty responses
+    }
+
+    // 1. Insert assistant message
+    let first_user_message: Option<String>;
+    {
+        let db = state.db.lock().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+
+        db.execute(
+            "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4)",
+            (&chat_id, &"assistant", &full_content, &now),
+        )
+        .map_err(|e| e.to_string())?;
+
+        db.execute(
+            "UPDATE chats SET updated_at = ?1 WHERE id = ?2",
+            (&now, &chat_id),
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Read first user message for auto-title
+        first_user_message = db.query_row(
+            "SELECT content FROM messages WHERE chat_id = ?1 AND role = 'user' ORDER BY created_at ASC LIMIT 1",
+            [&chat_id],
+            |row| row.get(0),
+        ).ok();
+    }
+
+    // 2. Auto-title if needed
+    let should_auto_title = {
+        let db = state.db.lock().unwrap();
+        let (title, user_edited): (String, bool) = db.query_row(
+            "SELECT title, user_edited_title FROM chats WHERE id = ?1",
+            [&chat_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap_or(("".to_string(), true));
+        !user_edited && title == "New Chat"
+    };
+
+    if should_auto_title {
+        if let Some(ref user_msg) = first_user_message {
+            // Read API settings for title generation
+            let (api_key, model_url, model_name) = {
+                let db = state.db.lock().unwrap();
+                let key: String = db.query_row("SELECT api_key FROM settings WHERE id = 1", (), |row| row.get(0)).unwrap_or_default();
+
+                let (snap_url, snap_model): (Option<String>, Option<String>) = db.query_row(
+                    "SELECT model_url_snapshot, model_name_snapshot FROM chats WHERE id = ?1",
+                    [&chat_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                ).unwrap_or((None, None));
+
+                if snap_url.is_some() && snap_model.is_some() {
+                    (key, snap_url.unwrap(), snap_model.unwrap())
+                } else {
+                    let (url, model): (String, String) = db.query_row(
+                        "SELECT model_url, model_name FROM settings WHERE id = 1",
+                        (),
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    ).unwrap_or_default();
+                    (key, url, model)
+                }
+            };
+
+            let title = try_generate_ai_title(&api_key, &model_url, &model_name, user_msg)
+                .await
+                .unwrap_or_else(|_| generate_fallback_title(user_msg));
+
+            let db = state.db.lock().unwrap();
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64;
+            let _ = db.execute(
+                "UPDATE chats SET title = ?1, updated_at = ?2 WHERE id = ?3 AND user_edited_title = 0",
+                (&title, &now, &chat_id),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Cancel an active stream by request_id.
+#[tauri::command]
+pub fn cancel_stream(
+    request_id: String,
+    registry: State<'_, crate::streaming::StreamRegistry>,
+) -> Result<(), String> {
+    registry.cancel(&request_id);
+    Ok(())
+}
