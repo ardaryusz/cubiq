@@ -70,8 +70,25 @@ pub fn set_tray_icon_from_mode(app: &AppHandle, mode: &str) -> tauri::Result<()>
 
 // ── Window show / hide / toggle ───────────────────────────────────────────────
 
+#[derive(serde::Serialize, Clone)]
+struct ThemePayload {
+    app_theme: String,
+}
+
+fn emit_theme_sync(app: &AppHandle, window: &tauri::WebviewWindow<tauri::Wry>) {
+    let app_theme = {
+        let state = app.state::<crate::commands::AppState>();
+        let db = state.db.lock().unwrap();
+        let mut stmt = db.prepare("SELECT app_theme FROM settings WHERE id = 1").unwrap();
+        stmt.query_row((), |row| row.get::<_, String>(0)).unwrap_or_else(|_| "cubiq-dark".to_string())
+    };
+    let _ = window.emit("cubiq:theme_changed", ThemePayload { app_theme });
+}
+
 pub fn show_quickask(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("quickask") {
+        emit_theme_sync(app, &window);
+        
         let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
             width: 420.0,
             height: 550.0,
@@ -108,6 +125,7 @@ pub fn toggle_quickask(app: &AppHandle) {
 
 pub fn center_quickask(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("quickask") {
+        emit_theme_sync(app, &window);
         let _ = window.move_window(Position::Center);
         let _ = window.show();
         let _ = window.set_focus();

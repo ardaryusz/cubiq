@@ -130,9 +130,6 @@ export default function QuickAskApp() {
     syncTheme();
 
     const unlistenShown = win.listen('quickask-shown', () => syncTheme());
-    const unlistenThemeChanged = win.listen<{ app_theme: string }>('cubiq:theme_changed', ({ payload }) => {
-      if (payload?.app_theme) applyTheme(payload.app_theme);
-    });
     const unlistenClear = win.listen('quickask:clear', () => clearAll());
 
     const onWindowBlur = () => {
@@ -155,7 +152,6 @@ export default function QuickAskApp() {
       window.removeEventListener('blur', onWindowBlur);
       unlistenShown.then(f => f());
       unlistenClear.then(f => f());
-      unlistenThemeChanged.then(f => f());
     };
   }, [clearAll, dismissWindow]);
 
@@ -172,6 +168,10 @@ export default function QuickAskApp() {
     const setup = async () => {
       console.log('[QA] registering stream listeners via global listen()');
       try {
+        const unTheme = await listen<{ app_theme: string }>('cubiq:theme_changed', ({ payload }) => {
+          if (payload?.app_theme) applyTheme(payload.app_theme);
+        });
+        
         const unDelta = await listen<StreamDeltaPayload>('cubiq:stream_delta', ({ payload }) => {
           console.log('[QA delta]', payload.request_id, 'active=', activeRequestRef.current,
             'match=', payload.request_id === activeRequestRef.current,
@@ -252,10 +252,10 @@ export default function QuickAskApp() {
 
         if (cancelled) {
           // Effect cleanup ran before setup finished (React Strict Mode double-invoke)
-          unDelta(); unDone(); unError();
+          unTheme(); unDelta(); unDone(); unError();
           console.log('[QA] listeners cancelled before setup completed, cleaned up');
         } else {
-          unlistens.push(unDelta, unDone, unError);
+          unlistens.push(unTheme, unDelta, unDone, unError);
           unlistenFnsRef.current = unlistens;
           console.log('[QA] stream listeners registered OK');
         }
