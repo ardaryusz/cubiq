@@ -39,7 +39,15 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             if let TrayIconEvent::Click { button, button_state, .. } = event {
                 match (button, button_state) {
                     (MouseButton::Left, MouseButtonState::Up) => {
-                        toggle_quickask(tray.app_handle());
+                        let pinned = QUICKASK_PINNED.load(Ordering::SeqCst);
+                        if pinned {
+                            // Pinned: never hide — just bring it to front.
+                            if let Some(win) = tray.app_handle().get_webview_window("quickask") {
+                                let _ = win.set_focus();
+                            }
+                        } else {
+                            toggle_quickask(tray.app_handle());
+                        }
                     }
                     _ => {}
                 }
