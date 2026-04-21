@@ -118,6 +118,11 @@ export default function QuickAskApp() {
     getCurrentWebviewWindow().hide();
   }, [clearAll]);
 
+  const handleOpenMain = useCallback(async () => {
+    await invoke('open_main_window');
+    dismissWindow();
+  }, [dismissWindow]);
+
   // ── sync pinned state to Rust ──────────────────────────────────────────────
   useEffect(() => {
     invoke('set_quickask_pinned', { pinned: isPinned }).catch(() => { });
@@ -143,7 +148,37 @@ export default function QuickAskApp() {
     window.addEventListener('blur', onWindowBlur);
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') dismissWindow();
+      if (e.key === 'Escape') {
+        dismissWindow();
+        return;
+      }
+
+      // Window-scoped shortcuts — only active when Cubiquick is focused
+      if (e.ctrlKey && e.altKey) {
+        switch (e.key.toUpperCase()) {
+          case 'P':
+            // Ctrl+Alt+P → pin / unpin
+            console.log('[Cubiquick] Ctrl+Alt+P → toggle pin');
+            e.preventDefault();
+            setIsPinned(p => !p);
+            break;
+          case 'D':
+            // Ctrl+Alt+D → clear chat (stay open)
+            console.log('[Cubiquick] Ctrl+Alt+D → clear chat');
+            e.preventDefault();
+            cancelActiveStream();
+            clearUIState();
+            break;
+          case 'C':
+            // Ctrl+Alt+C → open main app (and hide quickask unless pinned)
+            console.log('[Cubiquick] Ctrl+Alt+C → open main window');
+            e.preventDefault();
+            handleOpenMain();
+            break;
+          default:
+            break;
+        }
+      }
     };
     window.addEventListener('keydown', onKeyDown);
 
@@ -153,7 +188,7 @@ export default function QuickAskApp() {
       unlistenShown.then(f => f());
       unlistenClear.then(f => f());
     };
-  }, [clearAll, dismissWindow]);
+  }, [clearAll, dismissWindow, cancelActiveStream, clearUIState, handleOpenMain]);
 
   // ── EFFECT 2: streaming event listeners — mount ONCE, stay alive ───────────
   // Uses the GLOBAL listen() from @tauri-apps/api/event.
@@ -347,11 +382,6 @@ export default function QuickAskApp() {
       e.preventDefault();
       handleSend();
     }
-  };
-
-  const handleOpenMain = async () => {
-    await invoke('open_main_window');
-    dismissWindow();
   };
 
   // ── render ─────────────────────────────────────────────────────────────────

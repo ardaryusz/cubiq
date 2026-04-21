@@ -39,14 +39,16 @@ function App() {
     invoke('set_tray_icon_mode', { mode }).catch(() => {});
   }, []);
 
-  // ── Global Ctrl+N shortcut: new draft chat ────────────────────
+  // ── Window-scoped Ctrl+Alt+N shortcut: new draft chat ───────────────────────
+  // Uses a DOM listener so it only fires when the main window is focused (not global).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-        // Don't intercept when a text input/textarea is focused so typing 'n' is unaffected
+      if (e.ctrlKey && e.altKey && e.key.toUpperCase() === 'N') {
+        // Don't intercept when a text input/textarea is focused
         const tag = (e.target as HTMLElement).tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         e.preventDefault();
+        console.log('[Cubiq] Ctrl+Alt+N → new draft chat');
         useAppStore.getState().setActiveChat(null);
       }
     };
