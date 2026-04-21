@@ -167,8 +167,7 @@ fn start_focus_watcher(app: AppHandle) {
             let is_pinned  = QUICKASK_PINNED.load(Ordering::SeqCst);
 
             if !is_focused && !is_pinned {
-                let _ = window.emit("quickask:clear", ());
-                std::thread::sleep(std::time::Duration::from_millis(20));
+                // When unfocused and not pinned, hide without clearing.
                 let _ = window.hide();
                 break;
             }

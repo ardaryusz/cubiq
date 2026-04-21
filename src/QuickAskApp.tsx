@@ -135,12 +135,9 @@ export default function QuickAskApp() {
     syncTheme();
 
     const unlistenShown = win.listen('quickask-shown', () => syncTheme());
-    const unlistenClear = win.listen('quickask:clear', () => clearAll());
-
     const onWindowBlur = () => {
       setTimeout(() => {
         if (!isPinnedRef.current) {
-          clearAll();
           win.hide();
         }
       }, 0);
@@ -186,7 +183,6 @@ export default function QuickAskApp() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('blur', onWindowBlur);
       unlistenShown.then(f => f());
-      unlistenClear.then(f => f());
     };
   }, [clearAll, dismissWindow, cancelActiveStream, clearUIState, handleOpenMain]);
 
