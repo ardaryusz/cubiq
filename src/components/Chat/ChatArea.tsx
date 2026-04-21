@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useAppStore } from '../../store';
 import type { Message } from '../../types';
@@ -9,6 +9,29 @@ import styles from './ChatArea.module.css';
 
 const LINE_HEIGHT = 24;   // px per line in the textarea
 const MAX_LINES = 12;
+
+const EMPTY_GREETINGS = [
+  "Ready when you are.",
+  "What are we building today?",
+  "Ask anything.",
+  "Let’s make something useful.",
+  "What’s the problem to solve?",
+  "Got a question?",
+  "Start with anything.",
+  "What’s on your mind?",
+  "Need a second brain?",
+  "Let’s figure it out.",
+  "Throw me a task.",
+  "What are we tackling today?",
+  "Let’s get to work.",
+  "Tell me what you need.",
+  "Start a new idea.",
+  "Need help with something?",
+  "Ask me anything.",
+  "What are we solving today?",
+  "Let’s start with a question.",
+  "Ready for the first prompt?"
+];
 
 interface StreamDeltaPayload {
   request_id: string;
@@ -85,6 +108,10 @@ export default function ChatArea() {
   };
 
   const activeChat = chats.find(c => c.id === activeChatId);
+
+  const emptyGreeting = useMemo(() => {
+    return EMPTY_GREETINGS[Math.floor(Math.random() * EMPTY_GREETINGS.length)];
+  }, [activeChatId]);
 
   // ── auto-grow textarea ──────────────────────────────────────────────
   const autoGrow = useCallback(() => {
@@ -411,8 +438,8 @@ export default function ChatArea() {
   };
 
   // ── Shared composer ──────────────────────────────────────────────────
-  const renderComposer = () => (
-    <div className={styles.composer}>
+  const renderComposer = (isCentered?: boolean) => (
+    <div className={`${styles.composer} ${isCentered ? styles.centeredComposer : ''}`}>
       <div className={styles.composerInner}>
         <textarea
           ref={textareaRef}
@@ -442,15 +469,16 @@ export default function ChatArea() {
     </div>
   );
 
+  const isEmptyChat = messages.length === 0 && !streamingMessage;
+
   // ── Empty state (no active chat) ─────────────────────────────────────
   if (!activeChatId || !activeChat) {
     return (
       <div className={styles.chatAreaEmpty}>
-        <div className={styles.emptyStateContent}>
-          <h2>New Chat</h2>
-          <p>Select a preset and send a message to start.</p>
+        <div className={styles.emptyCenteredGroup}>
+          <h2 className={styles.greetingText}>{emptyGreeting}</h2>
+          {renderComposer(true)}
         </div>
-        {renderComposer()}
       </div>
     );
   }
@@ -502,8 +530,11 @@ export default function ChatArea() {
       <div className={styles.messages} ref={scrollContainerRef}>
         {isLoadingMessages ? (
           <div className={styles.emptyState}><p>Loading messages…</p></div>
-        ) : messages.length === 0 && !streamingMessage ? (
-          <div className={styles.emptyState}><p>No messages yet. Send a message to start!</p></div>
+        ) : isEmptyChat ? (
+          <div className={styles.emptyCenteredGroup}>
+            <h2 className={styles.greetingText}>{emptyGreeting}</h2>
+            {renderComposer(true)}
+          </div>
         ) : (
           <>
             {messages.map((msg, i) => (
@@ -573,7 +604,7 @@ export default function ChatArea() {
 
       </div>
 
-      {renderComposer()}
+      {!isEmptyChat && !isLoadingMessages && renderComposer()}
     </div>
   );
 }

@@ -15,23 +15,28 @@
   width: 100%;
   min-height: 0;
 }
-.emptyStateContent {
+.emptyCenteredGroup {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
-  padding: 20px;
-  text-align: center;
+  padding: 20px 20px 10vh 20px; /* Slight optical adjustment upwards */
+  width: 100%;
 }
-.emptyStateContent h2 {
+
+.greetingText {
   color: var(--text-primary);
-  margin-bottom: 10px;
-  font-size: 1.5rem;
+  font-size: 1.6rem;
+  font-weight: 500;
+  text-align: center;
+  opacity: 0;
+  animation: greetingFadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-.emptyStateContent p {
-  font-size: 0.95rem;
+
+@keyframes greetingFadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ─── Header ─── */
@@ -100,12 +105,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-direction: column;
   color: var(--text-muted);
-}
-.emptyState h2 {
-  color: var(--text-primary);
-  margin-bottom: 10px;
 }
 
 /* ─── Message Rows ─── */
@@ -184,6 +184,11 @@
   background-color: transparent;
   flex-shrink: 0;
   border-top: none;
+  width: 100%;
+}
+
+.centeredComposer {
+  padding: 24px 20px 0; /* Overrides default composer padding, adds top space below greeting */
 }
 
 .composerInner {
