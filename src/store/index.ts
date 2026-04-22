@@ -142,7 +142,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         isLoading: false,
         draftPresetId: presets.length > 0 ? (presets[0].id ?? null) : null,
         expandedFolders: new Set(),
-        workspacesCollapsed: (folders.length ?? 0) >= 6
+        workspacesCollapsed: (folders.length ?? 0) >= 6,
+        activeChatId: settings.active_chat_id ?? null,
+        activeFolderId: settings.active_folder_id ?? null
       });
     } catch (err: unknown) {
       set({ error: String(err), isLoading: false });
@@ -155,11 +157,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       const { presets } = get();
       set({ draftPresetId: presets.length > 0 ? presets[0].id : null });
     }
+    const { settings, updateSettings } = get();
+    if (settings) {
+      const newSettings = { ...settings, active_chat_id: id, active_folder_id: null };
+      if (id !== null) {
+        newSettings.last_chat_id = id;
+      }
+      updateSettings(newSettings).catch(console.error);
+    }
   },
   setActiveFolder: (id) => {
     set({ activeFolderId: id });
     if (id !== null) {
       set({ activeChatId: null });
+    }
+    const { settings, updateSettings } = get();
+    if (settings) {
+      const newSettings = { 
+        ...settings, 
+        active_folder_id: id, 
+        active_chat_id: id !== null ? null : settings.active_chat_id 
+      };
+      updateSettings(newSettings).catch(console.error);
     }
   },
   setInitialDraftPrompt: (prompt) => set({ initialDraftPrompt: prompt }),

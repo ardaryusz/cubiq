@@ -54,6 +54,10 @@ export interface Settings {
   model_name: string;
   selected_preset_id?: number;
   trash_retention_days: number;
+  active_chat_id?: number | null;
+  active_folder_id?: number | null;
+  last_chat_id?: number | null;
+  cli_preset_id?: number | null;
 }
 
 export interface Folder {

@@ -16,13 +16,17 @@ pub struct AppState {
 pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
     let db = state.db.lock().unwrap();
     let mut stmt = db.prepare(
-        "SELECT theme, accent_theme, api_key, model_url, model_name, selected_preset_id, app_theme, trash_retention_days
+        "SELECT theme, accent_theme, api_key, model_url, model_name, selected_preset_id, app_theme, trash_retention_days, active_chat_id, active_folder_id, last_chat_id, cli_preset_id
          FROM settings WHERE id = 1"
     ).map_err(|e| e.to_string())?;
 
     let settings = stmt.query_row((), |row| {
         let app_theme: Result<String, _> = row.get(6);
         let retention: Result<i64, _> = row.get(7);
+        let active_chat_id: Result<Option<i64>, _> = row.get(8);
+        let active_folder_id: Result<Option<i64>, _> = row.get(9);
+        let last_chat_id: Result<Option<i64>, _> = row.get(10);
+        let cli_preset_id: Result<Option<i64>, _> = row.get(11);
         Ok(Settings {
             theme: row.get(0)?,
             accent_theme: row.get(1)?,
@@ -32,6 +36,11 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
             selected_preset_id: row.get(5)?,
             app_theme: app_theme.unwrap_or_else(|_| "cubiq-dark".to_string()),
             trash_retention_days: retention.unwrap_or(7),
+            active_chat_id: active_chat_id.unwrap_or(None),
+            active_folder_id: active_folder_id.unwrap_or(None),
+            last_chat_id: last_chat_id.unwrap_or(None),
+            cli_preset_id: cli_preset_id.unwrap_or(None),
+            ..Default::default()
         })
     }).map_err(|e| e.to_string())?;
 
@@ -42,8 +51,13 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
 pub fn update_settings(settings: Settings, state: State<'_, AppState>) -> Result<(), String> {
     let db = state.db.lock().unwrap();
     db.execute(
-        "UPDATE settings SET theme = ?1, accent_theme = ?2, api_key = ?3, model_url = ?4, model_name = ?5, selected_preset_id = ?6, app_theme = ?7, trash_retention_days = ?8 WHERE id = 1",
-        (&settings.theme, &settings.accent_theme, &settings.api_key, &settings.model_url, &settings.model_name, &settings.selected_preset_id, &settings.app_theme, &settings.trash_retention_days),
+        "UPDATE settings SET theme = ?1, accent_theme = ?2, api_key = ?3, model_url = ?4, model_name = ?5, selected_preset_id = ?6, app_theme = ?7, trash_retention_days = ?8, active_chat_id = ?9, active_folder_id = ?10, last_chat_id = ?11, cli_preset_id = ?12 WHERE id = 1",
+        (
+            &settings.theme, &settings.accent_theme, &settings.api_key, &settings.model_url, 
+            &settings.model_name, &settings.selected_preset_id, &settings.app_theme, 
+            &settings.trash_retention_days, &settings.active_chat_id, &settings.active_folder_id,
+            &settings.last_chat_id, &settings.cli_preset_id
+        ),
     ).map_err(|e| e.to_string())?;
     Ok(())
 }

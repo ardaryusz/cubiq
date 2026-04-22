@@ -50,7 +50,12 @@ pub fn init_db(app_dir: PathBuf) -> Result<Connection> {
     let db_path = app_dir.join("cubiq.db");
     let conn = Connection::open(db_path)?;
 
-    conn.execute("PRAGMA foreign_keys = ON", ())?;
+    // Enable WAL mode and busy timeout for concurrent access
+    conn.execute_batch("
+        PRAGMA journal_mode = WAL;
+        PRAGMA busy_timeout = 5000;
+        PRAGMA foreign_keys = ON;
+    ")?;
 
     // ── Create base tables (original schema, IF NOT EXISTS) ──────────
     conn.execute(
@@ -115,6 +120,11 @@ pub fn init_db(app_dir: PathBuf) -> Result<Connection> {
     if version < 4 {
         migrate_v3_to_v4(&conn)?;
         conn.pragma_update(None, "user_version", 4)?;
+    }
+
+    if version < 5 {
+        migrate_v4_to_v5(&conn)?;
+        conn.pragma_update(None, "user_version", 5)?;
     }
 
     // Purge expired soft-deleted chats on every startup
@@ -274,6 +284,21 @@ fn migrate_v3_to_v4(conn: &Connection) -> Result<()> {
 
     // 2. Retention setting
     tx.execute("ALTER TABLE settings ADD COLUMN trash_retention_days INTEGER NOT NULL DEFAULT 7", ())?;
+
+    tx.commit()?;
+    Ok(())
+}
+
+/// Migration from v4 (trash) to v5 (CLI state).
+///
+/// - Adds active_chat_id, active_folder_id, last_chat_id, cli_preset_id
+fn migrate_v4_to_v5(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+
+    tx.execute("ALTER TABLE settings ADD COLUMN active_chat_id INTEGER", ())?;
+    tx.execute("ALTER TABLE settings ADD COLUMN active_folder_id INTEGER", ())?;
+    tx.execute("ALTER TABLE settings ADD COLUMN last_chat_id INTEGER", ())?;
+    tx.execute("ALTER TABLE settings ADD COLUMN cli_preset_id INTEGER", ())?;
 
     tx.commit()?;
     Ok(())

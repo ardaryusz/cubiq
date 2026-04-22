@@ -74,6 +74,33 @@ pub struct Settings {
     pub selected_preset_id: Option<i64>,
     #[serde(default = "default_retention")]
     pub trash_retention_days: i64,
+    #[serde(default)]
+    pub active_chat_id: Option<i64>,
+    #[serde(default)]
+    pub active_folder_id: Option<i64>,
+    #[serde(default)]
+    pub last_chat_id: Option<i64>,
+    #[serde(default)]
+    pub cli_preset_id: Option<i64>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            app_theme: "cubiq-dark".to_string(),
+            theme: "system".to_string(),
+            accent_theme: "emerald".to_string(),
+            api_key: "".to_string(),
+            model_url: "https://api.groq.com/openai/v1".to_string(),
+            model_name: "llama-3.3-70b-versatile".to_string(),
+            selected_preset_id: None,
+            trash_retention_days: 7,
+            active_chat_id: None,
+            active_folder_id: None,
+            last_chat_id: None,
+            cli_preset_id: None,
+        }
+    }
 }
 
 fn default_app_theme() -> String {
