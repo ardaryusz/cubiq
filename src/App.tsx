@@ -19,6 +19,10 @@ function App() {
   const isLoading = useAppStore(state => state.isLoading);
   const isSettingsOpen = useAppStore(state => state.isSettingsOpen);
   const activeFolderId = useAppStore(state => state.activeFolderId);
+  const activeChatId = useAppStore(state => state.activeChatId);
+
+  // Temporary logging for routing
+  console.log(`[App] Render: activeChatId=${activeChatId}, activeFolderId=${activeFolderId}`);
 
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_WIDTH);
@@ -32,7 +36,12 @@ function App() {
   const dragStartX = useRef(0);
   const dragStartWidth = useRef(sidebarWidth);
 
-  useEffect(() => { initialize(); }, [initialize]);
+  const initStreamingListeners = useAppStore(state => state.initStreamingListeners);
+
+  useEffect(() => { 
+    initialize(); 
+    initStreamingListeners();
+  }, [initialize, initStreamingListeners]);
 
   // Set tray icon ONCE at startup based on OS color scheme (no listener).
   // Dark OS → light logo; Light OS → dark logo.
@@ -130,7 +139,7 @@ function App() {
 
       {/* Main content */}
       <main className={styles.mainContent} style={{ width: `calc(100% - ${effectiveWidth}px - 6px)` }}>
-        {activeFolderId !== null ? <FolderView folderId={activeFolderId} /> : <ChatArea />}
+        {activeChatId !== null ? <ChatArea /> : activeFolderId !== null ? <FolderView folderId={activeFolderId} /> : <ChatArea />}
       </main>
 
       {isSettingsOpen && <SettingsModal />}

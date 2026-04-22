@@ -10,7 +10,7 @@ export default function FolderView({ folderId }: { folderId: number }) {
   const folders = useAppStore(s => s.folders);
   const setActiveChat = useAppStore(s => s.setActiveChat);
   const setActiveFolder = useAppStore(s => s.setActiveFolder);
-  const setInitialDraftPrompt = useAppStore(s => s.setInitialDraftPrompt);
+  const startChatWithFirstPrompt = useAppStore(s => s.startChatWithFirstPrompt);
 
   const [previews, setPreviews] = useState<FolderChatPreview[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,16 +38,8 @@ export default function FolderView({ folderId }: { folderId: number }) {
     const content = prompt.trim();
     if (!content) return;
 
-    // Create new chat
-    const id = await ipc.createChat("New Chat");
-    if (id) {
-      // Move to folder
-      await ipc.moveChatToFolder(id, folderId);
-      // Set draft prompt for ChatArea to consume
-      setInitialDraftPrompt(content);
-      // Open chat (this will unmount FolderView and mount ChatArea)
-      setActiveChat(id);
-    }
+    // Delegate creation, navigation, and streaming to the global store
+    await startChatWithFirstPrompt(folderId, content);
   };
 
   const filteredChats = previews.filter(c => {

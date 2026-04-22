@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Chat, DeletedChat, Folder, Settings, Preset } from '../types';
 import * as ipc from '../lib/ipc';
-import { emit } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
 interface AppState {
@@ -19,6 +19,9 @@ interface AppState {
   isLoading: boolean;
   error: string | null;
 
+  messages: Record<number, import('../types').Message[]>;
+  streamingMessages: Record<number, { content: string; isStreaming: boolean; sendError?: string }>;
+  
   // Core actions
   initialize: () => Promise<void>;
   setActiveChat: (id: number | null) => void;
@@ -26,12 +29,19 @@ interface AppState {
   setInitialDraftPrompt: (prompt: string | null) => void;
   setShowArchived: (show: boolean) => void;
   setSettingsOpen: (isOpen: boolean) => void;
+  addOptimisticChat: (chat: Chat) => void;
 
   // Data refresh
   refreshChats: () => Promise<void>;
   refreshPresets: () => Promise<void>;
   refreshFolders: () => Promise<void>;
   refreshDeletedChats: () => Promise<void>;
+
+  loadMessages: (chatId: number) => Promise<void>;
+  initStreamingListeners: () => void;
+  sendChatMessage: (chatId: number, content: string) => Promise<void>;
+  startChatWithFirstPrompt: (folderId: number | null, prompt: string) => Promise<void>;
+  clearSendError: (chatId: number) => void;
 
   // Chat CRUD
   createChat: (title: string) => Promise<number | null>;
@@ -101,6 +111,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   isSettingsOpen: false,
   isLoading: true,
   error: null,
+  messages: {},
+  streamingMessages: {},
 
   initialize: async () => {
     try {
@@ -136,11 +148,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   setActiveFolder: (id) => {
-    set({ activeFolderId: id, activeChatId: null });
+    set({ activeFolderId: id });
+    if (id !== null) {
+      set({ activeChatId: null });
+    }
   },
   setInitialDraftPrompt: (prompt) => set({ initialDraftPrompt: prompt }),
   setShowArchived: (show) => set({ showArchived: show }),
   setSettingsOpen: (isOpen) => set({ isSettingsOpen: isOpen }),
+  addOptimisticChat: (chat) => set((state) => {
+    // Merge if it already exists, otherwise prepend
+    const exists = state.chats.some(c => c.id === chat.id);
+    if (exists) {
+      return { chats: state.chats.map(c => c.id === chat.id ? { ...c, ...chat } : c) };
+    }
+    return { chats: [chat, ...state.chats] };
+  }),
 
   refreshChats: async () => {
     try {
@@ -149,6 +172,185 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error('Failed to load chats', error);
     }
+  },
+
+  loadMessages: async (chatId) => {
+    try {
+      const msgs = await ipc.getMessages(chatId);
+      set(state => ({
+        messages: { ...state.messages, [chatId]: msgs }
+      }));
+    } catch (error) {
+      console.error(`Failed to load messages for chat ${chatId}`, error);
+    }
+  },
+
+  sendChatMessage: async (chatId, content) => {
+    set(state => ({
+      streamingMessages: {
+        ...state.streamingMessages,
+        [chatId]: { content: '', isStreaming: true, sendError: undefined }
+      }
+    }));
+    try {
+      // 1. Snapshot the preset if not locked
+      const chat = get().chats.find(c => c.id === chatId);
+      if (chat && !chat.preset_locked) {
+        await get().lockChatPreset(chatId);
+      }
+      
+      // 2. Add user message
+      await ipc.addMessage(chatId, 'user', content);
+      await get().loadMessages(chatId); // Refresh local store messages
+
+      // 3. Start stream
+      const requestId = `chat-${chatId}-${Date.now()}`;
+      await ipc.startChatStream(chatId, requestId);
+    } catch (e) {
+      set(state => ({
+        streamingMessages: {
+          ...state.streamingMessages,
+          [chatId]: { content: '', isStreaming: false, sendError: String(e) }
+        }
+      }));
+      await get().loadMessages(chatId);
+    }
+  },
+
+  startChatWithFirstPrompt: async (folderId, prompt) => {
+    try {
+      const id = await ipc.createChat("New Chat");
+      if (!id) return;
+
+      // 1. Optimistic insert
+      get().addOptimisticChat({
+        id,
+        title: "New Chat",
+        created_at: Date.now(),
+        updated_at: Date.now(),
+        archived: false,
+        preset_locked: false,
+        user_edited_title: false,
+        folder_id: folderId
+      });
+
+      // 2. Move to folder if needed
+      if (folderId !== null) {
+        ipc.moveChatToFolder(id, folderId).catch(console.error);
+      }
+
+      // 3. Navigate instantly (sets activeChatId and clears activeFolderId)
+      get().setActiveChat(id);
+
+      // 4. Send the prompt and start streaming
+      await get().sendChatMessage(id, prompt);
+    } catch (e) {
+      console.error("Failed to start chat with prompt:", e);
+    }
+  },
+
+  clearSendError: (chatId) => {
+    set(state => {
+      const current = state.streamingMessages[chatId];
+      if (!current) return state;
+      return {
+        streamingMessages: {
+          ...state.streamingMessages,
+          [chatId]: { ...current, sendError: undefined }
+        }
+      };
+    });
+  },
+
+  initStreamingListeners: () => {
+    // Prevent duplicate listeners
+    if ((window as any).__streamingListenersInited) return;
+    (window as any).__streamingListenersInited = true;
+
+    listen<any>('cubiq:stream_delta', ({ payload }) => {
+      // Parse chatId from request_id if it follows "chat-{chatId}-..."
+      const parts = payload.request_id?.split('-');
+      if (parts && parts[0] === 'chat' && parts[1]) {
+        const chatId = parseInt(parts[1], 10);
+        if (!isNaN(chatId)) {
+          set(state => {
+            const current = state.streamingMessages[chatId];
+            if (!current) return state;
+            return {
+              streamingMessages: {
+                ...state.streamingMessages,
+                [chatId]: { ...current, content: current.content + payload.delta }
+              }
+            };
+          });
+          console.log(`[Store] DELTA applied for chat ${chatId}, request_id=${payload.request_id}`);
+        }
+      }
+    }).catch(console.error);
+
+    listen<any>('cubiq:stream_done', async ({ payload }) => {
+      const parts = payload.request_id?.split('-');
+      if (parts && parts[0] === 'chat' && parts[1]) {
+        const chatId = parseInt(parts[1], 10);
+        if (!isNaN(chatId)) {
+          const finalContent = get().streamingMessages[chatId]?.content || '';
+          
+          set(state => ({
+            streamingMessages: {
+              ...state.streamingMessages,
+              [chatId]: { content: finalContent, isStreaming: false }
+            }
+          }));
+
+          if (finalContent.trim()) {
+            try {
+              await ipc.finalizeChatStream(chatId, payload.request_id, finalContent);
+              await get().refreshChats();
+              await get().loadMessages(chatId);
+              // Clear streaming message placeholder
+              set(state => {
+                const copy = { ...state.streamingMessages };
+                delete copy[chatId];
+                return { streamingMessages: copy };
+              });
+            } catch (e) {
+              set(state => ({
+                streamingMessages: {
+                  ...state.streamingMessages,
+                  [chatId]: { content: finalContent, isStreaming: false, sendError: String(e) }
+                }
+              }));
+            }
+          } else {
+            // Clear if empty
+            set(state => {
+              const copy = { ...state.streamingMessages };
+              delete copy[chatId];
+              return { streamingMessages: copy };
+            });
+          }
+          console.log(`[Store] DONE applied for chat ${chatId}, request_id=${payload.request_id}`);
+        }
+      }
+    }).catch(console.error);
+
+    listen<any>('cubiq:stream_error', ({ payload }) => {
+      const parts = payload.request_id?.split('-');
+      if (parts && parts[0] === 'chat' && parts[1]) {
+        const chatId = parseInt(parts[1], 10);
+        if (!isNaN(chatId)) {
+          set(state => {
+            const current = state.streamingMessages[chatId] || { content: '' };
+            return {
+              streamingMessages: {
+                ...state.streamingMessages,
+                [chatId]: { ...current, isStreaming: false, sendError: payload.message }
+              }
+            };
+          });
+        }
+      }
+    }).catch(console.error);
   },
 
   refreshPresets: async () => {
