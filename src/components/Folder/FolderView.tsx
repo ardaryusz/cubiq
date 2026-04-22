@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react';
 import { useAppStore } from '../../store';
 import { getFolderChatPreviews } from '../../lib/ipc';
 import type { FolderChatPreview } from '../../types';
-import { Search, FolderOpen, SendHorizonal } from 'lucide-react';
+import { Search, FolderOpen, SendHorizonal, ChevronDown } from 'lucide-react';
 import styles from './FolderView.module.css';
-import * as ipc from '../../lib/ipc';
 
 export default function FolderView({ folderId }: { folderId: number }) {
   const folders = useAppStore(s => s.folders);
@@ -12,15 +11,20 @@ export default function FolderView({ folderId }: { folderId: number }) {
   const setActiveFolder = useAppStore(s => s.setActiveFolder);
   const startChatWithFirstPrompt = useAppStore(s => s.startChatWithFirstPrompt);
 
+  const chats = useAppStore(s => s.chats);
+  const presets = useAppStore(s => s.presets);
+  const draftPresetId = useAppStore(s => s.draftPresetId);
+
   const [previews, setPreviews] = useState<FolderChatPreview[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [prompt, setPrompt] = useState('');
 
   const folder = folders.find(f => f.id === folderId);
 
+  // Auto-refresh previews whenever the global chat list changes (e.g. rename, delete, new)
   useEffect(() => {
     getFolderChatPreviews(folderId).then(setPreviews).catch(console.error);
-  }, [folderId]);
+  }, [folderId, chats]);
 
   // Esc returns to empty state
   useEffect(() => {
@@ -39,7 +43,7 @@ export default function FolderView({ folderId }: { folderId: number }) {
     if (!content) return;
 
     // Delegate creation, navigation, and streaming to the global store
-    await startChatWithFirstPrompt(folderId, content);
+    await startChatWithFirstPrompt(folderId, content, draftPresetId);
   };
 
   const filteredChats = previews.filter(c => {
@@ -59,20 +63,40 @@ export default function FolderView({ folderId }: { folderId: number }) {
 
       <div className={styles.composerContainer}>
         <form className={styles.composer} onSubmit={handleStartChat}>
-          <input
-            className={styles.composerInput}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={`Start a chat in ${folder.name}…`}
-            autoFocus
-          />
-          <button
-            type="submit"
-            className={styles.sendBtn}
-            disabled={!prompt.trim()}
-          >
-            <SendHorizonal size={18} />
-          </button>
+          <div className={styles.composerInner}>
+            <input
+              className={styles.composerInput}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder={`Start a chat in ${folder.name}…`}
+              autoFocus
+            />
+            <div className={styles.composerFooter}>
+              <div className={styles.composerLeft}>
+                <div className={styles.presetSelectorComposer}>
+                  <select
+                    className={styles.presetSelectComposer}
+                    value={draftPresetId ?? ''}
+                    onChange={e => {
+                      const pid = Number(e.target.value);
+                      useAppStore.setState({ draftPresetId: pid });
+                    }}
+                    title="Select preset for new chat"
+                  >
+                    {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <ChevronDown size={11} className={styles.presetSelectIconComposer} />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className={styles.sendBtn}
+                disabled={!prompt.trim()}
+              >
+                <SendHorizonal size={20} />
+              </button>
+            </div>
+          </div>
         </form>
       </div>
 

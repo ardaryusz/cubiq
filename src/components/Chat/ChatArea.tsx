@@ -47,9 +47,7 @@ export default function ChatArea() {
   const renameChat = useAppStore(state => state.renameChat);
   const archiveChat = useAppStore(state => state.archiveChat);
   const deleteChat = useAppStore(state => state.deleteChat);
-  const refreshChats = useAppStore(state => state.refreshChats);
   const updateChatPreset = useAppStore(state => state.updateChatPreset);
-  const lockChatPreset = useAppStore(state => state.lockChatPreset);
   const startNewChat = useAppStore(state => state.startNewChat);
 
   const [input, setInput] = useState('');

@@ -34,58 +34,114 @@
 }
 
 .composer {
-  position: relative;
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-lg);
-  background-color: var(--bg-composer);
-  transition: border-color 0.15s, box-shadow 0.15s;
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
+  padding: 0;
+  background-color: transparent;
+  width: 100%;
 }
 
-.composer:focus-within {
+.composerInner {
+  max-width: 800px;
+  margin: 0 auto;
+  background-color: var(--bg-composer, var(--bg-user-bubble));
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 10px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+.composerInner:focus-within {
   border-color: var(--accent-base);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
 }
 
 .composerInput {
-  flex: 1;
-  background: transparent;
+  width: 100%;
   border: none;
+  background: transparent;
+  resize: none;
   outline: none;
-  color: var(--text-primary);
+  padding: 0 8px;
   font-size: 1rem;
-  padding: 8px 0;
-  font-family: inherit;
+  color: var(--text-primary);
+  line-height: 1.5;
+  min-height: 24px;
 }
 
 .composerInput::placeholder {
   color: var(--text-muted);
 }
 
-.sendBtn {
+.composerFooter {
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: var(--accent-base);
-  color: #ffffff;
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 8px;
-  cursor: pointer;
-  transition: background-color 0.15s;
-  flex-shrink: 0;
+  justify-content: space-between;
+  padding: 0 8px 0 6px;
 }
 
-.sendBtn:hover:not(:disabled) {
-  background: var(--accent-hover);
+.composerLeft {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Preset selector */
+.presetSelectorComposer {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.presetSelectComposer {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  border-radius: 10px;
+  padding: 2px 22px 2px 8px;
+  font-size: 0.73rem;
+  color: var(--accent-base);
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  max-width: 200px;
+}
+
+.presetSelectComposer:focus {
+  border-color: var(--accent-base);
+}
+
+.presetSelectIconComposer {
+  position: absolute;
+  right: 6px;
+  pointer-events: none;
+  color: var(--accent-base);
+}
+
+.sendBtn {
+  color: var(--accent-base);
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
 }
 
 .sendBtn:disabled {
-  opacity: 0.5;
+  color: var(--text-muted);
   cursor: not-allowed;
+}
+
+.sendBtn:not(:disabled):hover {
+  background: var(--state-hover);
 }
 
 .mainContent {

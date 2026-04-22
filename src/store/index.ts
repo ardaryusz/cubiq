@@ -22,7 +22,12 @@ interface AppState {
   messages: Record<number, import('../types').Message[]>;
   streamingMessages: Record<number, { content: string; isStreaming: boolean; sendError?: string }>;
   
-  // Core actions
+  // Sidebar state (startup defaults handled in initialize)
+  workspacesCollapsed: boolean;
+  expandedFolders: Set<number>;
+  setWorkspacesCollapsed: (collapsed: boolean) => void;
+  toggleFolderExpansion: (folderId: number) => void;
+  
   initialize: () => Promise<void>;
   setActiveChat: (id: number | null) => void;
   setActiveFolder: (id: number | null) => void;
@@ -40,7 +45,7 @@ interface AppState {
   loadMessages: (chatId: number) => Promise<void>;
   initStreamingListeners: () => void;
   sendChatMessage: (chatId: number, content: string) => Promise<void>;
-  startChatWithFirstPrompt: (folderId: number | null, prompt: string) => Promise<void>;
+  startChatWithFirstPrompt: (folderId: number | null, prompt: string, presetId?: number | null) => Promise<void>;
   clearSendError: (chatId: number) => void;
 
   // Chat CRUD
@@ -113,6 +118,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   error: null,
   messages: {},
   streamingMessages: {},
+  workspacesCollapsed: true,
+  expandedFolders: new Set<number>(),
 
   initialize: async () => {
     try {
@@ -133,7 +140,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         folders,
         deletedChats,
         isLoading: false,
-        draftPresetId: presets.length > 0 ? presets[0].id : null
+        draftPresetId: presets.length > 0 ? (presets[0].id ?? null) : null,
+        expandedFolders: new Set(),
+        workspacesCollapsed: (folders.length ?? 0) >= 6
       });
     } catch (err: unknown) {
       set({ error: String(err), isLoading: false });
@@ -217,7 +226,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  startChatWithFirstPrompt: async (folderId, prompt) => {
+  startChatWithFirstPrompt: async (folderId, prompt, presetId) => {
     try {
       const id = await ipc.createChat("New Chat");
       if (!id) return;
@@ -239,10 +248,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         ipc.moveChatToFolder(id, folderId).catch(console.error);
       }
 
-      // 3. Navigate instantly (sets activeChatId and clears activeFolderId)
+      // 3. Set preset if provided
+      if (presetId) {
+        await get().updateChatPreset(id, presetId);
+      }
+
+      // 4. Navigate instantly (sets activeChatId and clears activeFolderId)
       get().setActiveChat(id);
 
-      // 4. Send the prompt and start streaming
+      // 5. Send the prompt and start streaming
       await get().sendChatMessage(id, prompt);
     } catch (e) {
       console.error("Failed to start chat with prompt:", e);
@@ -427,6 +441,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   renameChat: async (id, title) => {
     try {
+      set(state => ({ chats: state.chats.map(c => c.id === id ? { ...c, title } : c) }));
       await ipc.renameChat(id, title);
       await get().refreshChats();
     } catch (error) {
@@ -436,6 +451,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   archiveChat: async (id, archived) => {
     try {
+      set(state => ({ chats: state.chats.map(c => c.id === id ? { ...c, archived } : c) }));
       await ipc.archiveChat(id, archived);
       await get().refreshChats();
       if (archived && get().activeChatId === id) {
@@ -448,6 +464,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteChat: async (id) => {
     try {
+      set(state => ({ chats: state.chats.filter(c => c.id !== id) }));
       await ipc.deleteChat(id);
       await get().refreshChats();
       await get().refreshDeletedChats();
@@ -589,6 +606,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   moveChatToFolder: async (chatId, folderId) => {
     try {
+      set(state => ({ chats: state.chats.map(c => c.id === chatId ? { ...c, folder_id: folderId } : c) }));
       await ipc.moveChatToFolder(chatId, folderId);
       await Promise.all([get().refreshChats(), get().refreshFolders()]);
     } catch (error) {
@@ -600,6 +618,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   bulkArchiveChats: async (ids, archived) => {
     try {
+      set(state => ({ chats: state.chats.map(c => (c.id !== undefined && ids.includes(c.id)) ? { ...c, archived } : c) }));
       await ipc.bulkArchiveChats(ids, archived);
       await get().refreshChats();
       // If the active chat was archived, deselect it
@@ -614,6 +633,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   bulkDeleteChats: async (ids) => {
     try {
+      set(state => ({ chats: state.chats.filter(c => c.id !== undefined && !ids.includes(c.id)) }));
       await ipc.bulkDeleteChats(ids);
       await get().refreshChats();
       await get().refreshDeletedChats();
@@ -628,6 +648,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   bulkMoveChats: async (ids, folderId) => {
     try {
+      set(state => ({ chats: state.chats.map(c => (c.id !== undefined && ids.includes(c.id)) ? { ...c, folder_id: folderId } : c) }));
       await ipc.bulkMoveChats(ids, folderId);
       await Promise.all([get().refreshChats(), get().refreshFolders()]);
     } catch (error) {
@@ -639,6 +660,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   restoreChats: async (ids) => {
     try {
+      // Optimistic restore: Remove from deletedChats, they'll be refetched into `chats` soon
+      set(state => ({ deletedChats: state.deletedChats.filter(c => !ids.includes(c.id)) }));
       await ipc.restoreChats(ids);
       await Promise.all([get().refreshChats(), get().refreshDeletedChats()]);
     } catch (error) {
@@ -662,5 +685,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error('Failed to purge expired chats', error);
     }
+  },
+
+  setWorkspacesCollapsed: (collapsed) => set({ workspacesCollapsed: collapsed }),
+
+  toggleFolderExpansion: (folderId) => {
+    set(state => {
+      const next = new Set(state.expandedFolders);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return { expandedFolders: next };
+    });
   },
 }));

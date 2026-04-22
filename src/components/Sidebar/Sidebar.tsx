@@ -81,63 +81,65 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   onExpand: () => void;
   isCollapsed?: boolean;
 }) {
-  const appTheme      = useAppStore(s => s.settings?.app_theme || 'cubiq-dark');
-  const chats         = useAppStore(s => s.chats);
-  const folders       = useAppStore(s => s.folders);
-  const activeChatId  = useAppStore(s => s.activeChatId);
+  const appTheme = useAppStore(s => s.settings?.app_theme || 'cubiq-dark');
+  const chats = useAppStore(s => s.chats);
+  const folders = useAppStore(s => s.folders);
+  const activeChatId = useAppStore(s => s.activeChatId);
   const activeFolderId = useAppStore(s => s.activeFolderId);
-  const showArchived  = useAppStore(s => s.showArchived);
+  const showArchived = useAppStore(s => s.showArchived);
 
-  const setActiveChat    = useAppStore(s => s.setActiveChat);
-  const setActiveFolder  = useAppStore(s => s.setActiveFolder);
-  const setShowArchived  = useAppStore(s => s.setShowArchived);
-  const setSettingsOpen  = useAppStore(s => s.setSettingsOpen);
-  const renameChat       = useAppStore(s => s.renameChat);
-  const createFolder     = useAppStore(s => s.createFolder);
-  const renameFolder     = useAppStore(s => s.renameFolder);
-  const deleteFolder     = useAppStore(s => s.deleteFolder);
+  const setActiveChat = useAppStore(s => s.setActiveChat);
+  const setActiveFolder = useAppStore(s => s.setActiveFolder);
+  const setShowArchived = useAppStore(s => s.setShowArchived);
+  const setSettingsOpen = useAppStore(s => s.setSettingsOpen);
+  const renameChat = useAppStore(s => s.renameChat);
+  const createFolder = useAppStore(s => s.createFolder);
+  const renameFolder = useAppStore(s => s.renameFolder);
+  const deleteFolder = useAppStore(s => s.deleteFolder);
   const bulkArchiveChats = useAppStore(s => s.bulkArchiveChats);
-  const bulkDeleteChats  = useAppStore(s => s.bulkDeleteChats);
-  const bulkMoveChats    = useAppStore(s => s.bulkMoveChats);
-  const restoreChats     = useAppStore(s => s.restoreChats);
+  const bulkDeleteChats = useAppStore(s => s.bulkDeleteChats);
+  const bulkMoveChats = useAppStore(s => s.bulkMoveChats);
+  const restoreChats = useAppStore(s => s.restoreChats);
+  const expandedFolders = useAppStore(s => s.expandedFolders);
+  const workspacesCollapsed = useAppStore(s => s.workspacesCollapsed);
+  const setWorkspacesCollapsed = useAppStore(s => s.setWorkspacesCollapsed);
+  const toggleFolderExpansion = useAppStore(s => s.toggleFolderExpansion);
 
   // ── local UI state ──────────────────────────────────────────────
-  const [expandedFolders, setExpandedFolders]     = useState<Set<number>>(new Set());
-  const [chatsCollapsed, setChatsCollapsed]         = useState(false);
-  const [workspacesCollapsed, setWorkspacesCollapsed] = useState(true);
-  const [contextMenu, setContextMenu]               = useState<ContextMenuState | null>(null);
-  const [renamingChatId, setRenamingChatId]         = useState<number | null>(null);
-  const [renameValue, setRenameValue]               = useState('');
-  const [renamingFolderId, setRenamingFolderId]     = useState<number | null>(null);
-  const [folderRenameValue, setFolderRenameValue]   = useState('');
-  const [creatingWorkspace, setCreatingWorkspace]   = useState(false);
-  const [brandingHovered, setBrandingHovered]       = useState(false);
-  const [newWorkspaceName, setNewWorkspaceName]     = useState('');
-  const [searchQuery, setSearchQuery]               = useState('');
+  const [chatsCollapsed, setChatsCollapsed] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renamingChatId, setRenamingChatId] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renamingFolderId, setRenamingFolderId] = useState<number | null>(null);
+  const [folderRenameValue, setFolderRenameValue] = useState('');
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [brandingHovered, setBrandingHovered] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [deleteWorkspaceDialog, setDeleteWorkspaceDialog] = useState<DeleteFolderDialog | null>(null);
-  const [quickSearchOpen, setQuickSearchOpen]       = useState(false);
-  const [quickArchivedOpen, setQuickArchivedOpen]   = useState(false);
-  const [quickSearchQuery, setQuickSearchQuery]     = useState('');
-  const [folderMenuTarget, setFolderMenuTarget]     = useState<{ folder: Folder; x: number; y: number } | null>(null);
+  const [quickSearchOpen, setQuickSearchOpen] = useState(false);
+  const [quickArchivedOpen, setQuickArchivedOpen] = useState(false);
+  const [quickSearchQuery, setQuickSearchQuery] = useState('');
+  const [folderMenuTarget, setFolderMenuTarget] = useState<{ folder: Folder; x: number; y: number } | null>(null);
 
   // ── multi-select state ─────────────────────────────────────────
-  const [selectMode, setSelectMode]                 = useState(false);
-  const [selectedIds, setSelectedIds]               = useState<Set<number>>(new Set());
-  const [lastSelectedId, setLastSelectedId]         = useState<number | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [lastSelectedId, setLastSelectedId] = useState<number | null>(null);
   const [lastSelectedSection, setLastSelectedSection] = useState<'chats' | number | null>(null); // 'chats' = ungrouped, number = folderId
-  const [bulkDeleteDialog, setBulkDeleteDialog]     = useState<BulkDeleteDialog | null>(null);
-  const [moveSubMenuOpen, setMoveSubMenuOpen]       = useState(false);
-  const [toast, setToast]                           = useState<ToastState | null>(null);
+  const [bulkDeleteDialog, setBulkDeleteDialog] = useState<BulkDeleteDialog | null>(null);
+  const [moveSubMenuOpen, setMoveSubMenuOpen] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
 
   // ── drag state ─────────────────────────────────────────────────
-  const [dragState, setDragState]                   = useState<DragState | null>(null);
-  const [dropTarget, setDropTarget]                 = useState<DropTarget | null>(null);
-  const dragHoldTimer                               = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dragStateRef                                = useRef<DragState | null>(null);
-  const dropTargetRef                               = useRef<DropTarget | null>(null);
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const dragHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragStateRef = useRef<DragState | null>(null);
+  const dropTargetRef = useRef<DropTarget | null>(null);
   // Ref so the async mouseUp handler always reads the current value (avoids stale closure)
-  const showArchivedRef                             = useRef(showArchived);
-  const selectModeRef                               = useRef(selectMode);
+  const showArchivedRef = useRef(showArchived);
+  const selectModeRef = useRef(selectMode);
 
   // ── toast helper ────────────────────────────────────────────────────
   const showToast = useCallback((message: string, undoIds?: number[]) => {
@@ -154,22 +156,22 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   }, [toast, restoreChats]);
 
   // refs
-  const renameInputRef     = useRef<HTMLInputElement>(null);
-  const folderRenameRef    = useRef<HTMLInputElement>(null);
-  const newFolderInputRef  = useRef<HTMLInputElement>(null);
-  const subMenuRef         = useRef<HTMLDivElement>(null);
-  const menuRef            = useRef<HTMLDivElement>(null);
-  const searchInputRef     = useRef<HTMLInputElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const folderRenameRef = useRef<HTMLInputElement>(null);
+  const newFolderInputRef = useRef<HTMLInputElement>(null);
+  const subMenuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const isCommittingNewWorkspace = useRef(false);
 
   // ── keep refs in sync ───────────────────────────────────────────
   useEffect(() => { showArchivedRef.current = showArchived; }, [showArchived]);
-  useEffect(() => { selectModeRef.current   = selectMode;   }, [selectMode]);
+  useEffect(() => { selectModeRef.current = selectMode; }, [selectMode]);
 
   // ── focus helpers ────────────────────────────────────────────────
-  useEffect(() => { if (renamingChatId)   renameInputRef.current?.focus();  }, [renamingChatId]);
+  useEffect(() => { if (renamingChatId) renameInputRef.current?.focus(); }, [renamingChatId]);
   useEffect(() => { if (renamingFolderId) folderRenameRef.current?.focus(); }, [renamingFolderId]);
-  useEffect(() => { if (creatingWorkspace)  newFolderInputRef.current?.focus(); }, [creatingWorkspace]);
+  useEffect(() => { if (creatingWorkspace) newFolderInputRef.current?.focus(); }, [creatingWorkspace]);
 
 
   // ── close context menu on outside click / Escape / scroll ───────
@@ -177,7 +179,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
 
   useEffect(() => {
     if (!contextMenu) return;
-    const onKey   = (e: KeyboardEvent) => { if (e.key === 'Escape') closeMenu(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeMenu(); };
     const onClick = (e: MouseEvent) => {
       if (
         menuRef.current && !menuRef.current.contains(e.target as Node) &&
@@ -263,11 +265,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
 
   // ── Folder expansion toggle ─────────────────────────────────────
   const toggleFolder = (id: number) => {
-    setExpandedFolders(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+    toggleFolderExpansion(id);
   };
 
   // ── Context menu open ──────────────────────────────────────────
@@ -298,7 +296,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   // ── Context menu actions ────────────────────────────────────────
   // Returns true if operating on a multi-selection (the right-clicked chat is in the selection)
   const ctxIsMulti = () => contextMenu != null && selectMode && selectedIds.has(contextMenu.chat.id!) && selectedIds.size > 1;
-  const ctxIds     = () => ctxIsMulti() ? Array.from(selectedIds) : (contextMenu ? [contextMenu.chat.id!] : []);
+  const ctxIds = () => ctxIsMulti() ? Array.from(selectedIds) : (contextMenu ? [contextMenu.chat.id!] : []);
 
   const ctxRename = () => {
     if (!contextMenu) return;
@@ -369,7 +367,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   };
 
   const onRenameKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter')  commitRename();
+    if (e.key === 'Enter') commitRename();
     if (e.key === 'Escape') setRenamingChatId(null);
   };
 
@@ -382,7 +380,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   };
 
   const onWorkspaceRenameKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter')  commitWorkspaceRename();
+    if (e.key === 'Enter') commitWorkspaceRename();
     if (e.key === 'Escape') setRenamingFolderId(null);
   };
 
@@ -405,7 +403,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   };
 
   const onNewWorkspaceKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter')  commitNewWorkspace();
+    if (e.key === 'Enter') commitNewWorkspace();
     if (e.key === 'Escape') { setCreatingWorkspace(false); setNewWorkspaceName(''); }
   };
 
@@ -512,7 +510,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
       e.preventDefault();
       const ids = sectionChats.map(c => c.id!);
       const fromIdx = ids.indexOf(lastSelectedId);
-      const toIdx   = ids.indexOf(id);
+      const toIdx = ids.indexOf(id);
       if (fromIdx !== -1 && toIdx !== -1) {
         const [lo, hi] = fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
         const rangeIds = ids.slice(lo, hi + 1);
@@ -630,8 +628,8 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
-  // dropTargetRef is a ref — not listed as dep. exitSelectMode is stable (useCallback).
-  // bulkArchiveChats/bulkMoveChats are stable store selectors.
+    // dropTargetRef is a ref — not listed as dep. exitSelectMode is stable (useCallback).
+    // bulkArchiveChats/bulkMoveChats are stable store selectors.
   }, [bulkArchiveChats, bulkMoveChats, exitSelectMode, showToast]);
 
   const onChatMouseDown = (e: React.MouseEvent, chat: Chat) => {
@@ -686,7 +684,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   };
 
   const isDraggingActive = dragState?.active === true;
-  const draggingDragIds  = dragState?.dragIds ?? [];
+  const draggingDragIds = dragState?.dragIds ?? [];
 
   // ─────────────────────────────────────────────────────────────────
   // Partition chats
@@ -719,14 +717,14 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   // ─────────────────────────────────────────────────────────────────
 
   const renderChatItem = (chat: Chat, section: 'chats' | number, sectionChats: Chat[]) => {
-    const isActive      = chat.id === activeChatId;
-    const isRenaming    = renamingChatId === chat.id;
-    const isSelected    = selectedIds.has(chat.id!);
+    const isActive = chat.id === activeChatId;
+    const isRenaming = renamingChatId === chat.id;
+    const isSelected = selectedIds.has(chat.id!);
     const isDraggingThis = isDraggingActive && draggingDragIds.includes(chat.id!);
 
     let className = styles.chatItem;
-    if (isActive)      className += ` ${styles.chatItemActive}`;
-    if (isSelected)    className += ` ${styles.chatItemSelected}`;
+    if (isActive) className += ` ${styles.chatItemActive}`;
+    if (isSelected) className += ` ${styles.chatItemSelected}`;
     if (isDraggingThis) className += ` ${styles.chatItemDragging}`;
 
     return (
@@ -801,10 +799,10 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
 
   const isDropTarget = (target: DropTarget): boolean => {
     if (!dropTarget) return false;
-    if (target.type === 'archive'   && dropTarget.type === 'archive')   return true;
+    if (target.type === 'archive' && dropTarget.type === 'archive') return true;
     if (target.type === 'unarchive' && dropTarget.type === 'unarchive') return true;
-    if (target.type === 'chats'     && dropTarget.type === 'chats')     return true;
-    if (target.type === 'folder'    && dropTarget.type === 'folder')    return dropTarget.folderId === target.folderId;
+    if (target.type === 'chats' && dropTarget.type === 'chats') return true;
+    if (target.type === 'folder' && dropTarget.type === 'folder') return dropTarget.folderId === target.folderId;
     return false;
   };
 
@@ -813,7 +811,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   // ─────────────────────────────────────────────────────────────────
 
   const isDarkTheme = DARK_SIDEBAR_THEMES.includes(appTheme);
-  const family      = isDarkTheme ? 'light' : 'dark';
+  const family = isDarkTheme ? 'light' : 'dark';
   const brandingSrc = isCollapsed
     ? (family === 'light' ? lightLogo : darkLogo)
     : (family === 'light' ? lightFull : darkFull);
@@ -831,8 +829,8 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
       >
         {isCollapsed ? (
           <div className={styles.collapsedBrandWrap}
-               onMouseEnter={() => setBrandingHovered(true)}
-               onMouseLeave={() => setBrandingHovered(false)}>
+            onMouseEnter={() => setBrandingHovered(true)}
+            onMouseLeave={() => setBrandingHovered(false)}>
             <img
               src={brandingSrc}
               alt="Cubiq Logo"
@@ -1010,7 +1008,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
 
                 {/* 3a. Workspaces Accordion */}
                 <div className={styles.workspacesSection}>
-                  <div className={styles.workspacesHeader} onClick={() => setWorkspacesCollapsed(p => !p)}>
+                  <div className={styles.workspacesHeader} onClick={() => setWorkspacesCollapsed(!workspacesCollapsed)}>
                     <div className={styles.workspaceHeaderMain}>
                       <span>Workspaces</span>
                     </div>
@@ -1062,10 +1060,10 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
                       <div className={styles.workspacesList}>
                         {folders.map(folder => {
                           const folderChats = grouped[folder.id] ?? [];
-                          const isExpanded  = expandedFolders.has(folder.id);
+                          const isExpanded = expandedFolders.has(folder.id);
                           const isRenamingF = renamingFolderId === folder.id;
-                          const isTarget    = isDropTarget({ type: 'folder', folderId: folder.id });
-                          const isValid     = isDraggingActive && dragState?.chat.folder_id !== folder.id;
+                          const isTarget = isDropTarget({ type: 'folder', folderId: folder.id });
+                          const isValid = isDraggingActive && dragState?.chat.folder_id !== folder.id;
 
                           const isActiveFolder = folder.id === activeFolderId;
 
@@ -1097,8 +1095,8 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
                                 ) : (
                                   <>
                                     <div className={styles.folderHeaderLeft}>
-                                      <div 
-                                        className={styles.folderIconWrapper} 
+                                      <div
+                                        className={styles.folderIconWrapper}
                                         onClick={e => { e.stopPropagation(); toggleFolder(folder.id); }}
                                       >
                                         {(isExpanded || !!searchQuery)
@@ -1109,7 +1107,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
                                       <span className={styles.folderName}>{folder.name}</span>
                                     </div>
                                     <div className={styles.folderHeaderRight}>
-                                      <div 
+                                      <div
                                         className={styles.folderIconWrapper}
                                         onClick={e => { e.stopPropagation(); toggleFolder(folder.id); }}
                                       >
@@ -1195,10 +1193,10 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
             )}
             <button
               className={`${styles.actionBtn}
-                ${isDropTarget({ type: 'archive' })   ? styles.dropTargetActive : ''}
+                ${isDropTarget({ type: 'archive' }) ? styles.dropTargetActive : ''}
                 ${isDropTarget({ type: 'unarchive' }) ? styles.dropTargetActive : ''}
-                ${isDraggingActive && !showArchived    ? styles.dropTargetValid  : ''}
-                ${isDraggingActive && showArchived     ? styles.dropTargetValid  : ''}
+                ${isDraggingActive && !showArchived ? styles.dropTargetValid : ''}
+                ${isDraggingActive && showArchived ? styles.dropTargetValid : ''}
               `}
               onClick={() => { setShowArchived(!showArchived); setActiveChat(null); }}
               onMouseEnter={() => onDropZoneEnter(showArchived ? { type: 'unarchive' } : { type: 'archive' })}
@@ -1336,7 +1334,7 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
             <Pencil size={14} /> Rename Workspace
           </button>
           <div className={styles.contextMenuDivider} />
-          
+
           <button className={styles.contextMenuItem} onClick={ctxWorkspaceSelectAll}>
             <CheckSquare size={14} /> Select All Chats
           </button>
@@ -1346,9 +1344,9 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
           <button className={styles.contextMenuItem} onClick={ctxWorkspaceArchiveAll}>
             <Archive size={14} /> {showArchived ? 'Unarchive All' : 'Archive All'}
           </button>
-          
+
           <div className={styles.contextMenuDivider} />
-          
+
           <button
             className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`}
             onClick={ctxWorkspaceDeleteAll}
