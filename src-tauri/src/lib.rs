@@ -62,6 +62,7 @@ pub fn run() {
         commands::test_connection,
         // Phase A: Folders
         commands::get_folders,
+        commands::get_folder_chat_previews,
         commands::create_folder,
         commands::rename_folder,
         commands::delete_folder,

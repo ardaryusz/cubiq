@@ -73,6 +73,8 @@ export default function ChatArea() {
   const updateChatPreset = useAppStore(state => state.updateChatPreset);
   const lockChatPreset = useAppStore(state => state.lockChatPreset);
   const startNewChat = useAppStore(state => state.startNewChat);
+  const initialDraftPrompt = useAppStore(state => state.initialDraftPrompt);
+  const setInitialDraftPrompt = useAppStore(state => state.setInitialDraftPrompt);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -299,7 +301,7 @@ export default function ChatArea() {
   }, []);
 
   // ── core send logic (takes an explicit chatId) ──────────────────────
-  const doSend = async (chatId: number, content: string) => {
+  const doSend = useCallback(async (chatId: number, content: string) => {
     setSendError(null);
     setIsStreaming(true);
     loadingForChatRef.current = chatId;
@@ -351,7 +353,16 @@ export default function ChatArea() {
       }
       setTimeout(() => textareaRef.current?.focus(), 0);
     }
-  };
+  }, [chats, lockChatPreset]);
+
+  // Handle initial draft prompt from FolderView
+  useEffect(() => {
+    if (activeChatId && initialDraftPrompt && !isLoadingMessages && messages.length === 0) {
+      const p = initialDraftPrompt;
+      setInitialDraftPrompt(null);
+      doSend(activeChatId, p);
+    }
+  }, [activeChatId, initialDraftPrompt, isLoadingMessages, messages.length, doSend, setInitialDraftPrompt]);
 
   // ── handleSend: works from empty-state too ──────────────────────────
   const handleSend = async () => {

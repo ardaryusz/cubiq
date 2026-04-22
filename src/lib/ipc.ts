@@ -67,6 +67,7 @@ export const testConnection = (apiKey: string, modelUrl: string, modelName: stri
 
 // ── Folders ──────────────────────────────────────────────────────────
 export const getFolders = () => invoke<Folder[]>('get_folders');
+export const getFolderChatPreviews = (folderId: number) => invoke<import('../types').FolderChatPreview[]>('get_folder_chat_previews', { folderId });
 export const createFolder = (name: string) => invoke<number>('create_folder', { name });
 export const renameFolder = (id: number, name: string) => invoke<void>('rename_folder', { id, name });
 export const deleteFolder = (id: number) => invoke<void>('delete_folder', { id });

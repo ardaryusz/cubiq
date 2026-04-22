@@ -85,9 +85,11 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
   const chats         = useAppStore(s => s.chats);
   const folders       = useAppStore(s => s.folders);
   const activeChatId  = useAppStore(s => s.activeChatId);
+  const activeFolderId = useAppStore(s => s.activeFolderId);
   const showArchived  = useAppStore(s => s.showArchived);
 
   const setActiveChat    = useAppStore(s => s.setActiveChat);
+  const setActiveFolder  = useAppStore(s => s.setActiveFolder);
   const setShowArchived  = useAppStore(s => s.setShowArchived);
   const setSettingsOpen  = useAppStore(s => s.setSettingsOpen);
   const renameChat       = useAppStore(s => s.renameChat);
@@ -1065,13 +1067,19 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
                           const isTarget    = isDropTarget({ type: 'folder', folderId: folder.id });
                           const isValid     = isDraggingActive && dragState?.chat.folder_id !== folder.id;
 
+                          const isActiveFolder = folder.id === activeFolderId;
+
                           if (searchQuery && folderChats.length === 0) return null;
 
                           return (
                             <div key={folder.id} className={styles.folderSection}>
                               <div
-                                className={`${styles.folderHeader} ${isTarget ? styles.dropTargetActive : ''} ${isValid && !isTarget ? styles.dropTargetValid : ''}`}
-                                onClick={() => !isRenamingF && toggleFolder(folder.id)}
+                                className={`${styles.folderHeader} ${isActiveFolder ? styles.folderHeaderActive : ''} ${isTarget ? styles.dropTargetActive : ''} ${isValid && !isTarget ? styles.dropTargetValid : ''}`}
+                                onClick={() => {
+                                  if (!isRenamingF) {
+                                    setActiveFolder(folder.id);
+                                  }
+                                }}
                                 onContextMenu={e => openFolderMenu(e, folder)}
                                 onMouseEnter={() => onDropZoneEnter({ type: 'folder', folderId: folder.id })}
                                 onMouseLeave={onDropZoneLeave}
@@ -1089,17 +1097,27 @@ export default function Sidebar({ onCollapse, onExpand, isCollapsed = false }: {
                                 ) : (
                                   <>
                                     <div className={styles.folderHeaderLeft}>
-                                      {(isExpanded || !!searchQuery)
-                                        ? <FolderOpen size={13} style={{ flexShrink: 0, opacity: 0.8 }} />
-                                        : <FolderIcon size={13} style={{ flexShrink: 0, opacity: 0.8 }} />
-                                      }
+                                      <div 
+                                        className={styles.folderIconWrapper} 
+                                        onClick={e => { e.stopPropagation(); toggleFolder(folder.id); }}
+                                      >
+                                        {(isExpanded || !!searchQuery)
+                                          ? <FolderOpen size={13} style={{ flexShrink: 0, opacity: 0.8 }} />
+                                          : <FolderIcon size={13} style={{ flexShrink: 0, opacity: 0.8 }} />
+                                        }
+                                      </div>
                                       <span className={styles.folderName}>{folder.name}</span>
                                     </div>
                                     <div className={styles.folderHeaderRight}>
-                                      <ChevronRight
-                                        size={12}
-                                        className={`${styles.headerChevron} ${(isExpanded || !!searchQuery) ? styles.headerChevronOpen : ''}`}
-                                      />
+                                      <div 
+                                        className={styles.folderIconWrapper}
+                                        onClick={e => { e.stopPropagation(); toggleFolder(folder.id); }}
+                                      >
+                                        <ChevronRight
+                                          size={12}
+                                          className={`${styles.headerChevron} ${(isExpanded || !!searchQuery) ? styles.headerChevronOpen : ''}`}
+                                        />
+                                      </div>
                                       <button
                                         className={styles.folderMenuBtn}
                                         title="Workspace options"

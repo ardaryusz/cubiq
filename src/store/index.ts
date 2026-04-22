@@ -11,7 +11,9 @@ interface AppState {
   folders: Folder[];
   deletedChats: DeletedChat[];
   activeChatId: number | null;
+  activeFolderId: number | null;
   draftPresetId: number | null;
+  initialDraftPrompt: string | null;
   showArchived: boolean;
   isSettingsOpen: boolean;
   isLoading: boolean;
@@ -20,6 +22,8 @@ interface AppState {
   // Core actions
   initialize: () => Promise<void>;
   setActiveChat: (id: number | null) => void;
+  setActiveFolder: (id: number | null) => void;
+  setInitialDraftPrompt: (prompt: string | null) => void;
   setShowArchived: (show: boolean) => void;
   setSettingsOpen: (isOpen: boolean) => void;
 
@@ -90,7 +94,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   folders: [],
   deletedChats: [],
   activeChatId: null,
+  activeFolderId: null,
   draftPresetId: null,
+  initialDraftPrompt: null,
   showArchived: false,
   isSettingsOpen: false,
   isLoading: true,
@@ -123,12 +129,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setActiveChat: (id) => {
-    set({ activeChatId: id });
+    set({ activeChatId: id, activeFolderId: null });
     if (id === null) {
       const { presets } = get();
       set({ draftPresetId: presets.length > 0 ? presets[0].id : null });
     }
   },
+  setActiveFolder: (id) => {
+    set({ activeFolderId: id, activeChatId: null });
+  },
+  setInitialDraftPrompt: (prompt) => set({ initialDraftPrompt: prompt }),
   setShowArchived: (show) => set({ showArchived: show }),
   setSettingsOpen: (isOpen) => set({ isSettingsOpen: isOpen }),
 

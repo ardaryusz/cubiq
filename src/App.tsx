@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from './store';
 import Sidebar from './components/Sidebar/Sidebar';
 import ChatArea from './components/Chat/ChatArea';
+import FolderView from './components/Folder/FolderView';
 import SettingsModal from './components/Settings/SettingsModal';
 import styles from './App.module.css';
 
@@ -17,6 +18,7 @@ function App() {
   const initialize = useAppStore(state => state.initialize);
   const isLoading = useAppStore(state => state.isLoading);
   const isSettingsOpen = useAppStore(state => state.isSettingsOpen);
+  const activeFolderId = useAppStore(state => state.activeFolderId);
 
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_WIDTH);
@@ -128,7 +130,7 @@ function App() {
 
       {/* Main content */}
       <main className={styles.mainContent} style={{ width: `calc(100% - ${effectiveWidth}px - 6px)` }}>
-        <ChatArea />
+        {activeFolderId !== null ? <FolderView folderId={activeFolderId} /> : <ChatArea />}
       </main>
 
       {isSettingsOpen && <SettingsModal />}

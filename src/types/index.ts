@@ -66,6 +66,13 @@ export interface Folder {
   chat_count: number;
 }
 
+export interface FolderChatPreview {
+  id: number;
+  title: string;
+  updated_at: number;
+  preview_text?: string;
+}
+
 export interface PresetExportItem {
   name: string;
   model_url: string;

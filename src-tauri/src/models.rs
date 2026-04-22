@@ -53,6 +53,14 @@ pub struct DeletedChat {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FolderChatPreview {
+    pub id: i64,
+    pub title: String,
+    pub updated_at: i64,
+    pub preview_text: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
     #[serde(default = "default_app_theme")]
     pub app_theme: String,

@@ -814,6 +814,34 @@ pub fn get_folders(state: State<'_, AppState>) -> Result<Vec<Folder>, String> {
     Ok(folders)
 }
 
+/// Returns lightweight previews (id, title, updated_at, last_user_message) for all non-archived chats in a folder.
+#[tauri::command]
+pub fn get_folder_chat_previews(folder_id: i64, state: State<'_, AppState>) -> Result<Vec<crate::models::FolderChatPreview>, String> {
+    let db = state.db.lock().unwrap();
+    let mut stmt = db.prepare(
+        "SELECT c.id, c.title, c.updated_at,
+               (SELECT m.content FROM messages m WHERE m.chat_id = c.id AND m.role = 'user' ORDER BY m.created_at DESC LIMIT 1) as preview_text
+         FROM chats c
+         WHERE c.folder_id = ?1 AND c.archived = 0 AND c.deleted_at IS NULL
+         ORDER BY c.updated_at DESC"
+    ).map_err(|e| e.to_string())?;
+
+    let iter = stmt.query_map([&folder_id], |row| {
+        Ok(crate::models::FolderChatPreview {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            updated_at: row.get(2)?,
+            preview_text: row.get(3)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut previews = Vec::new();
+    for p in iter {
+        previews.push(p.map_err(|e| e.to_string())?);
+    }
+    Ok(previews)
+}
+
 /// Creates a new folder. Position is set to max+1 so new folders appear at the bottom.
 #[tauri::command]
 pub fn create_folder(name: String, state: State<'_, AppState>) -> Result<i64, String> {
