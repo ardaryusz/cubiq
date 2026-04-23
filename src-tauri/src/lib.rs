@@ -22,8 +22,8 @@ pub fn run() {
         )?;
       }
 
-      let app_dir = app.path().app_data_dir().expect("Failed to get app_data_dir");
-      let db = db::init_db(app_dir).expect("Failed to initialize database");
+      let (db_path, _) = db::resolve_db_path(None);
+      let db = db::init_db(db_path).expect("Failed to initialize database");
       app.manage(AppState {
           db: std::sync::Mutex::new(db),
       });

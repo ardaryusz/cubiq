@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "cubiq",
   "version": "0.1.0",
-  "identifier": "com.cubiq.app",
+  "identifier": "com.cubiq.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -41,7 +41,13 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": "nsis",
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "installerHooks": "nsis/hooks.nsh"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -52,6 +58,9 @@
     "resources": [
       "../src/assets/lightLogo.png",
       "../src/assets/darkLogo.png"
+    ],
+    "externalBin": [
+      "binaries/cubiq-cli"
     ]
   }
 }

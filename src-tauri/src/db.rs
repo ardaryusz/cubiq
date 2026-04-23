@@ -1,6 +1,59 @@
 use rusqlite::{Connection, Result, params};
 use std::fs;
 use std::path::PathBuf;
+use directories::BaseDirs;
+
+pub const APP_IDENTIFIER: &str = "com.cubiq.desktop";
+
+pub fn resolve_db_path(db_override: Option<PathBuf>) -> (PathBuf, String) {
+    // 1. Flag override
+    if let Some(path) = db_override {
+        return (path, "flag".to_string());
+    }
+
+    // 2. Env var override
+    if let Ok(env_val) = std::env::var("CUBIQ_DB_PATH") {
+        return (PathBuf::from(env_val), "env".to_string());
+    }
+
+    // 3. Default path with migration check
+    let base_dirs = BaseDirs::new().expect("Failed to get base directories");
+    let app_data_dir = base_dirs.data_dir();
+    let canonical_dir = app_data_dir.join(APP_IDENTIFIER);
+    let canonical_db = canonical_dir.join("cubiq.db");
+
+    if !canonical_db.exists() {
+        // Try to migrate from old candidates
+        let candidates = [
+            "com.cubiq.app",
+            "com.ardaryusz.cubiq",
+            "com.tauri.dev",
+            "cubiq",
+        ];
+
+        for cand in candidates {
+            if cand == APP_IDENTIFIER { continue; }
+            let old_dir = app_data_dir.join(cand);
+            let old_db = old_dir.join("cubiq.db");
+            if old_db.exists() {
+                // Perform one-time migration
+                if !canonical_dir.exists() {
+                    let _ = fs::create_dir_all(&canonical_dir);
+                }
+                
+                // Copy with backup
+                let backup_path = old_db.with_extension("db.bak");
+                let _ = fs::copy(&old_db, &backup_path);
+                if let Ok(_) = fs::copy(&old_db, &canonical_db) {
+                    let _ = fs::remove_file(&old_db);
+                    return (canonical_db, format!("migrated from {}", cand));
+                }
+            }
+        }
+    }
+
+    (canonical_db, "default".to_string())
+}
 
 /// Built-in preset definitions used during migration seeding.
 struct BuiltinPreset {
@@ -37,18 +90,19 @@ const BUILTIN_PRESETS: &[BuiltinPreset] = &[
     },
 ];
 
-pub fn init_db(app_dir: PathBuf) -> Result<Connection> {
-    if !app_dir.exists() {
-        fs::create_dir_all(&app_dir).map_err(|e| {
-            rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
-                Some(format!("Failed to create app data directory: {}", e)),
-            )
-        })?;
+pub fn init_db(db_path: PathBuf) -> Result<Connection> {
+    if let Some(parent) = db_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).map_err(|e| {
+                rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
+                    Some(format!("Failed to create database directory: {}", e)),
+                )
+            })?;
+        }
     }
 
-    let db_path = app_dir.join("cubiq.db");
-    let conn = Connection::open(db_path)?;
+    let conn = Connection::open(&db_path)?;
 
     // Enable WAL mode and busy timeout for concurrent access
     conn.execute_batch("

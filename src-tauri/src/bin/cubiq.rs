@@ -3,6 +3,7 @@ use directories::BaseDirs;
 use is_terminal::IsTerminal;
 use rusqlite::{Connection, params};
 use std::io::{self, stdout, Write};
+use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use reqwest::Client;
@@ -12,7 +13,7 @@ use std::sync::{Mutex, OnceLock};
 
 // Bring in logic from our tauri app
 use cubiq_lib::models::Settings;
-use cubiq_lib::db::init_db;
+use cubiq_lib::db::{init_db, resolve_db_path, APP_IDENTIFIER};
 use cubiq_lib::ai;
 
 static EPHEMERAL_HISTORY: OnceLock<Mutex<Vec<(String, String)>>> = OnceLock::new();
@@ -51,6 +52,9 @@ struct Cli {
     /// Skip confirmation prompts
     #[arg(long, short, global = true)]
     yes: bool,
+    /// Absolute path to the cubiq.db file
+    #[arg(long, global = true, value_name = "FILE")]
+    db: Option<PathBuf>,
 }
 
 #[derive(Args, Clone)]
@@ -148,6 +152,17 @@ enum Commands {
         #[command(flatten)]
         target: TargetArgs,
     },
+    /// Debugging commands
+    Debug {
+        #[command(subcommand)]
+        target: DebugTarget,
+    },
+}
+
+#[derive(Subcommand)]
+enum DebugTarget {
+    /// Show database resolution details
+    Db,
 }
 
 #[derive(Subcommand)]
@@ -204,19 +219,63 @@ enum ListTarget {
     Deleted,
 }
 
-fn get_app_data_dir() -> PathBuf {
-    let base_dirs = BaseDirs::new().expect("Failed to get base directories");
-    base_dirs.data_dir().join("com.cubiq.app")
-}
+static DB_OVERRIDE: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 fn open_db() -> rusqlite::Result<Connection> {
-    let app_dir = get_app_data_dir();
-    init_db(app_dir)
+    let db_override = DB_OVERRIDE.get().cloned().flatten();
+    let (db_path, _) = resolve_db_path(db_override);
+    
+    // Validate override if present
+    if let Some(o) = DB_OVERRIDE.get().cloned().flatten() {
+        if !o.exists() {
+            eprintln!("Error: Specified database file does not exist: {:?}", o);
+            std::process::exit(1);
+        }
+    }
+
+    init_db(db_path)
+}
+
+
+fn handle_debug_db() {
+    let db_override = DB_OVERRIDE.get().cloned().flatten();
+    let (resolved_path, source) = resolve_db_path(db_override);
+
+    
+    let mut output = String::new();
+    output.push_str("--- Cubiq DB Debug ---\n");
+    output.push_str(&format!("Resolved DB Path: {:?}\n", resolved_path));
+    output.push_str(&format!("Source: {}\n", source));
+    output.push_str(&format!("Default Identifier: {}\n", APP_IDENTIFIER));
+    
+    output.push_str("\nCandidate databases found in AppData:\n");
+    if let Some(base_dirs) = BaseDirs::new() {
+        let app_data = base_dirs.data_dir();
+        if let Ok(entries) = fs::read_dir(&app_data) {
+            let mut found_any = false;
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    let potential_db = entry.path().join("cubiq.db");
+                    if potential_db.exists() {
+                        output.push_str(&format!("- {:?}\n", potential_db));
+                        found_any = true;
+                    }
+                }
+            }
+            if !found_any {
+                output.push_str("  (None found)\n");
+            }
+        }
+    }
+    
+    let is_tty = io::stdout().is_terminal();
+    let _ = write_text(&output, is_tty);
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    DB_OVERRIDE.set(cli.db.clone()).ok();
 
     match &cli.command {
         Commands::Status => handle_status(),
@@ -260,6 +319,9 @@ async fn main() {
         Commands::Restore { target } => handle_restore(target, cli.yes),
         Commands::Archive { target } => handle_archive(target, cli.yes),
         Commands::Unarchive { target } => handle_unarchive(target, cli.yes),
+        Commands::Debug { target } => match target {
+            DebugTarget::Db => handle_debug_db(),
+        },
     }
 }
 
