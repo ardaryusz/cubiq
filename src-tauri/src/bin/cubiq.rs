@@ -73,9 +73,13 @@ enum Commands {
     Status,
     /// Print path-like location (e.g. workspaces/<name>/<chat>)
     Where,
-    /// Ask a question. An ephemeral, in-memory conversation session (no DB writes).
+    /// Ask a question. Interactive REPL session with ephemeral memory.
     Ask {
-        prompt: String,
+        /// Optional first prompt. If omitted, starts REPL immediately.
+        prompt: Option<String>,
+        /// Single-shot stateless request (no REPL, no memory).
+        #[arg(long)]
+        once: bool,
         /// Override preset for this request
         #[arg(long)]
         preset: Option<String>,
@@ -219,6 +223,7 @@ async fn main() {
         Commands::Where => handle_where(),
         Commands::Ask {
             prompt,
+            once,
             preset,
             no_stream,
             stream,
@@ -230,7 +235,7 @@ async fn main() {
             if *stream {
                 do_stream = true;
             }
-            handle_ask(prompt, preset.as_deref(), do_stream).await;
+            handle_ask(prompt.as_deref(), *once, preset.as_deref(), do_stream).await;
         }
         Commands::Send {
             message,
@@ -695,7 +700,7 @@ fn get_system_prompt(conn: &Connection, preset_arg: Option<&str>, settings: &Set
     "You are Cubiq. Give the shortest correct answer possible. Skip greetings, preambles, filler, and explanations unless the user asks for them. Be direct and efficient.".to_string()
 }
 
-async fn handle_ask(prompt: &str, preset_opt: Option<&str>, do_stream: bool) {
+async fn handle_ask(prompt_opt: Option<&str>, once: bool, preset_opt: Option<&str>, do_stream: bool) {
     let conn = open_db().expect("Failed to open DB");
     
     let settings: Settings = conn.query_row(
@@ -725,26 +730,104 @@ async fn handle_ask(prompt: &str, preset_opt: Option<&str>, do_stream: bool) {
         std::process::exit(1);
     }
 
-    let mut history = EPHEMERAL_HISTORY.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap();
-    if history.is_empty() {
-        let sys_prompt = get_system_prompt(&conn, preset_opt, &settings);
-        history.push(("system".to_string(), sys_prompt));
-    }
-    history.push(("user".to_string(), prompt.to_string()));
-
-    let messages = history.clone();
-
-    if do_stream {
-        if let Some(content) = stream_completion(&settings.api_key, &settings.model_url, &settings.model_name, messages).await {
-            history.push(("assistant".to_string(), content));
+    if once {
+        if let Some(prompt) = prompt_opt {
+            let sys_prompt = get_system_prompt(&conn, preset_opt, &settings);
+            let messages = vec![
+                ("system".to_string(), sys_prompt),
+                ("user".to_string(), prompt.to_string()),
+            ];
+            if do_stream {
+                stream_completion(&settings.api_key, &settings.model_url, &settings.model_name, messages).await;
+            } else {
+                match ai::chat_completion(&settings.api_key, &settings.model_url, &settings.model_name, messages).await {
+                    Ok(content) => print_result(&content),
+                    Err(e) => eprintln!("Error: {}", e),
+                }
+            }
+        } else {
+            eprintln!("Error: --once requires a prompt.");
+            std::process::exit(1);
         }
+        return;
+    }
+
+    // REPL mode
+    let mut history_guard = EPHEMERAL_HISTORY.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap();
+    // System prompt is rebuilt per request in send_ephemeral_message, not stored in history.
+
+    if let Some(p) = prompt_opt {
+        // Send first message
+        send_ephemeral_message(&conn, &settings, &mut history_guard, p, preset_opt, do_stream).await;
+    }
+
+    loop {
+        print!("> ");
+        stdout().flush().unwrap();
+        let mut input = String::new();
+        if io::stdin().read_line(&mut input).is_err() {
+            println!();
+            break;
+        }
+        let input = input.trim();
+        if input.is_empty() {
+            continue;
+        }
+        if input == "--exit" {
+            break;
+        }
+        if input == "--clear" {
+            history_guard.clear();
+            println!("Ephemeral history cleared.");
+            continue;
+        }
+        send_ephemeral_message(&conn, &settings, &mut history_guard, input, preset_opt, do_stream).await;
+    }
+}
+
+async fn send_ephemeral_message(conn: &Connection, settings: &Settings, history: &mut Vec<(String, String)>, prompt: &str, preset_opt: Option<&str>, do_stream: bool) {
+    history.push(("user".to_string(), prompt.to_string()));
+    
+    // Enforce 40 message cap (rolling buffer: 20 turns)
+    // Try to remove in pairs (user + assistant) to keep context coherent
+    while history.len() > 40 {
+        if history.len() >= 2 && history[0].0 == "user" && history[1].0 == "assistant" {
+            history.remove(0);
+            history.remove(0);
+        } else {
+            history.remove(0);
+        }
+    }
+
+    let sys_prompt = get_system_prompt(conn, preset_opt, settings);
+    let mut messages = vec![("system".to_string(), sys_prompt)];
+    messages.extend(history.iter().cloned());
+
+    let final_content = if do_stream {
+        stream_completion(&settings.api_key, &settings.model_url, &settings.model_name, messages).await
     } else {
         match ai::chat_completion(&settings.api_key, &settings.model_url, &settings.model_name, messages).await {
             Ok(content) => {
                 print_result(&content);
-                history.push(("assistant".to_string(), content));
+                Some(content)
+            },
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                None
             }
-            Err(e) => eprintln!("Error: {}", e),
+        }
+    };
+
+    if let Some(content) = final_content {
+        history.push(("assistant".to_string(), content));
+        // Enforce 40 message cap again after assistant response
+        while history.len() > 40 {
+            if history.len() >= 2 && history[0].0 == "user" && history[1].0 == "assistant" {
+                history.remove(0);
+                history.remove(0);
+            } else {
+                history.remove(0);
+            }
         }
     }
 }
