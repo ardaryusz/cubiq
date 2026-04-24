@@ -1,73 +1,83 @@
-# React + TypeScript + Vite
+# Cubiq
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Cubiq is a modern, high-performance desktop AI assistant for Windows, featuring a powerful GUI, a lightweight ephemeral QuickAsk interface, and a robust CLI for power users.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Main GUI**: A full-featured chat interface for managing persistent conversations and workspaces.
+- **QuickAsk**: A global, always-on-top ephemeral popup for quick questions (`Ctrl+Alt+Space`).
+- **Unified CLI**: A powerful command-line interface that shares state with the desktop app.
+- **Workspaces**: Organize your chats into folders.
+- **Presets**: Custom system prompts and model configurations (Research, Programming, etc.).
+- **Privacy First**: Local SQLite database and secure API key management.
+- **Soft Delete**: Integrated trash system with auto-purge.
 
-## React Compiler
+## Quickstart
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Installation (Windows)
 
-## Expanding the ESLint configuration
+1. Download the latest `cubiq_0.1.0_x64-setup.exe` installer.
+2. Run the installer (requires UAC for per-machine installation).
+3. Cubiq will be installed to `C:\Program Files\cubiq`.
+4. The CLI will be automatically added to your system `PATH`.
+5. Open a new terminal and type `cubiq status` to verify.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### First Run
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+1. Launch Cubiq from the Start Menu.
+2. Go to **Settings** and enter your API Key (e.g., Groq, OpenAI).
+3. You're ready to chat!
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## CLI Examples
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+The CLI provides two modes: **Ephemeral (REPL)** and **Persistent**.
+
+### Ephemeral REPL
+Ask quick questions without cluttering your database history.
+```powershell
+# Start an interactive session with 40-message memory
+cubiq ask
+
+# Ask a single question and exit
+cubiq ask "How do I list files in PowerShell?" --once
+
+# Use a specific preset for the session
+cubiq ask --preset "Programming"
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Persistent Commands
+Interact with your main app's chats and workspaces.
+```powershell
+# Create a new chat in a workspace
+cubiq new --title "Project Brainstorm" --workspace "Ideas"
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+# Send a message to the currently active chat
+cubiq send "What are the next steps?"
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# List all workspaces
+cubiq list workspaces
+
+# Open a specific chat to make it active
+cubiq open chats "Project Brainstorm"
 ```
+
+## Documentation
+
+Comprehensive documentation is available in the `docs/` folder:
+
+- [Installation Guide](docs/INSTALLATION.md)
+- [CLI Reference](docs/CLI.md)
+- [Development Guide](docs/DEVELOPMENT.md)
+- [Installer Details](docs/INSTALLER.md)
+- [Database Architecture](docs/DATABASE.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Contributing](docs/CONTRIBUTING.md)
+- [Security](docs/SECURITY.md)
+
+## Screenshots
+
+*(Screenshots coming soon)*
+
+## License
+
+TBD
