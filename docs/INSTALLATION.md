@@ -42,17 +42,22 @@ Cubiq can be uninstalled via the Windows "Apps & Features" menu.
 ## Common Installation Problems
 
 ### `makensis` missing
+
 If you are building the installer from source and encounter this error, ensure you have **NSIS** installed and added to your `PATH`. Cubiq requires NSIS for the `pnpm tauri build` step.
 
 ### PATH not updating
+
 If `cubiq` is not recognized after installation:
+
 1. Ensure you opened a **new** terminal window.
 2. Check if `C:\Program Files\cubiq\cli` exists.
 3. Manually check your System Environment Variables to see if the entry was added.
 
 ### Permissions
+
 Since Cubiq installs to `Program Files`, you must have administrator rights. If the installer fails to write files, ensure you are running it as an Administrator.
 
 ## Build Artifacts
+
 When building from source, the installer is produced at:
 `src-tauri/target/release/bundle/nsis/cubiq_0.1.0_x64-setup.exe`

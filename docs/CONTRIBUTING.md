@@ -13,6 +13,7 @@ We welcome contributions! Please follow these guidelines to ensure a smooth proc
 ## Commit Message Style
 
 We prefer [Conventional Commits](https://www.conventionalcommits.org/):
+
 - `feat:` for new features.
 - `fix:` for bug fixes.
 - `docs:` for documentation changes.
@@ -22,10 +23,12 @@ We prefer [Conventional Commits](https://www.conventionalcommits.org/):
 ## Code Quality
 
 ### Frontend (React/TS)
+
 - Run `pnpm lint` to check for ESLint errors.
 - Ensure TypeScript types are correctly defined.
 
 ### Backend (Rust)
+
 - Run `cargo fmt` to format your code.
 - Run `cargo clippy` to check for common mistakes and improvements.
 - Ensure all new commands are reflected in the CLI subcommands in `src-tauri/src/bin/cubiq.rs`.
@@ -33,6 +36,7 @@ We prefer [Conventional Commits](https://www.conventionalcommits.org/):
 ## Pull Request Checklist
 
 Before submitting your PR, please ensure:
+
 - [ ] The app builds successfully (`pnpm tauri build`).
 - [ ] The CLI sidecar script runs without errors (`.\scripts\build-cli-sidecar.ps1`).
 - [ ] You have tested both the GUI and the CLI for regression.
@@ -40,6 +44,7 @@ Before submitting your PR, please ensure:
 - [ ] Your commits follow the conventional style.
 
 ## Testing Your Changes
+
 - **GUI**: Test both the Main window and the QuickAsk popup.
 - **CLI**: Test `cubiq status` and `cubiq ask` as a baseline.
 - **Database**: Ensure any schema changes include a new migration in `src/db.rs`.

@@ -18,11 +18,13 @@ Both the GUI and CLI use a unified resolution logic (defined in `cubiq_lib::db::
 3. **Default**: The path in the Tauri app data directory for `com.cubiq.desktop`.
 
 ### Migration Logic
+
 On startup, if the database is missing from the canonical location, the app automatically checks for legacy databases from older versions (e.g., `com.cubiq.app`, `cubiq`) and migrates the data forward, creating a `.bak` file for safety.
 
 ## Configuration Storage
 
 The `settings` table (where `id = 1`) contains global configuration:
+
 - **API Keys**: Stored in the `api_key` column.
 - **Model Config**: `model_url` and `model_name`.
 - **UI State**: `app_theme`, `accent_theme`, and the `active_chat_id`.
@@ -37,7 +39,9 @@ The CLI reads these values directly to authenticate with AI providers and determ
 - **Backups**: During migrations, the app creates `.db.bak` copies. It is recommended that users manually back up the `cubiq.db` file before major system changes.
 
 ## Schema Versioning
+
 The database uses `PRAGMA user_version` to track migrations. Migrations are applied automatically by the Rust backend on startup.
+
 - **v1**: Added Presets and Accent Themes.
 - **v3**: Added Workspaces (folders).
 - **v4**: Added Soft-delete (trash) and Retention settings.
