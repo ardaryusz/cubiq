@@ -33,7 +33,9 @@ Cubiq is a modern, high-performance desktop AI assistant for Windows, featuring 
 The CLI provides two modes: **Ephemeral (REPL)** and **Persistent**.
 
 ### Ephemeral REPL
+
 Ask quick questions without cluttering your database history.
+
 ```powershell
 # Start an interactive session with 40-message memory
 cubiq ask
@@ -46,8 +48,11 @@ cubiq ask --preset "Programming"
 ```
 
 ### Persistent Commands
+
 Interact with your main app's chats and workspaces.
+
 ```powershell
+
 # Create a new chat in a workspace
 cubiq new --title "Project Brainstorm" --workspace "Ideas"
 
@@ -76,7 +81,7 @@ Comprehensive documentation is available in the `docs/` folder:
 
 ## Screenshots
 
-*(Screenshots coming soon)*
+Coming soon...
 
 ## License
 
