@@ -70,7 +70,7 @@ cubiq open chats "Project Brainstorm"
 
 Comprehensive documentation is available in the `docs/` folder:
 
-- [Changelog](docsCHANGELOG.md)
+- [Changelog](docs/CHANGELOG.md)
 - [Installation Guide](docs/INSTALLATION.md)
 - [CLI Reference](docs/CLI.md)
 - [Development Guide](docs/DEVELOPMENT.md)
