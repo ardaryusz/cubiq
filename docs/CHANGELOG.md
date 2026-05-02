@@ -6,6 +6,15 @@ This project loosely follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.2] - 2026-05-02
+
+### Fixed
+
+- Fixed external links opening in the app and causing soft-lock on desktop window.
+- Fixed markdown rendering (added back anchor tags) to make links clickable.
+
+---
+
 ## [1.0.1] - 2026-05-02
 
 ### Fixed

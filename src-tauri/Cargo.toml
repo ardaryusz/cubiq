@@ -1,6 +1,6 @@
 [package]
 name = "cubiq"
-version = "1.0.1"
+version = "1.0.2"
 description = "Cubiq main app"
 authors = ["you"]
 license = ""
