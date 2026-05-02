@@ -24,6 +24,10 @@ pub fn run() {
 
       let (db_path, _) = db::resolve_db_path(None);
       let db = db::init_db(db_path).expect("Failed to initialize database");
+      
+      // Clear active_chat_id and active_folder_id on GUI startup so it starts with a fresh composer
+      let _ = db.execute("UPDATE settings SET active_chat_id = NULL, active_folder_id = NULL WHERE id = 1", []);
+
       app.manage(AppState {
           db: std::sync::Mutex::new(db),
       });

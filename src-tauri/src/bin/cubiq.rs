@@ -15,6 +15,43 @@ use std::sync::{Mutex, OnceLock};
 use cubiq_lib::models::Settings;
 use cubiq_lib::db::{init_db, resolve_db_path, APP_IDENTIFIER};
 use cubiq_lib::ai;
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct CliSession {
+    active_chat_id: Option<i64>,
+    active_folder_id: Option<i64>,
+}
+
+fn get_session_path() -> PathBuf {
+    let base_dirs = BaseDirs::new().expect("Failed to get base directories");
+    let mut path = base_dirs.data_local_dir().to_path_buf();
+    path.push("Cubiq");
+    let _ = fs::create_dir_all(&path);
+    path.push("cli-session.json");
+    path
+}
+
+fn read_session() -> CliSession {
+    let path = get_session_path();
+    if let Ok(content) = fs::read_to_string(path) {
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        CliSession::default()
+    }
+}
+
+fn write_session(session: &CliSession) {
+    let path = get_session_path();
+    if let Ok(content) = serde_json::to_string(session) {
+        let _ = fs::write(path, content);
+    }
+}
+
+fn clear_session() {
+    let path = get_session_path();
+    let _ = fs::remove_file(path);
+}
 
 static EPHEMERAL_HISTORY: OnceLock<Mutex<Vec<(String, String)>>> = OnceLock::new();
 
@@ -385,9 +422,11 @@ fn handle_status() {
         }
     };
 
+    let session = read_session();
+
     let mut output = String::new();
     output.push_str(&format!("Model: {} ({})\n", settings.model_name, settings.model_url));
-    if let Some(chat_id) = settings.active_chat_id {
+    if let Some(chat_id) = session.active_chat_id {
         if let Ok(title) = conn.query_row("SELECT title FROM chats WHERE id = ?1", [chat_id], |r| r.get::<_, String>(0)) {
             output.push_str(&format!("Active Chat: {} (ID: {})\n", title, chat_id));
         } else {
@@ -396,7 +435,7 @@ fn handle_status() {
     } else {
         output.push_str("Active Chat: None\n");
     }
-    if let Some(folder_id) = settings.active_folder_id {
+    if let Some(folder_id) = session.active_folder_id {
         if let Ok(name) = conn.query_row("SELECT name FROM folders WHERE id = ?1", [folder_id], |r| r.get::<_, String>(0)) {
             output.push_str(&format!("Active Workspace: {} (ID: {})\n", name, folder_id));
         } else {
@@ -411,10 +450,10 @@ fn handle_status() {
 
 fn handle_where() {
     let conn = open_db().expect("Failed to open DB");
-    let active_chat_id: Option<i64> = conn.query_row("SELECT active_chat_id FROM settings WHERE id = 1", (), |r| r.get(0)).unwrap_or(None);
+    let session = read_session();
     
     let mut output = String::new();
-    if let Some(chat_id) = active_chat_id {
+    if let Some(chat_id) = session.active_chat_id {
         let title: String = conn.query_row("SELECT title FROM chats WHERE id = ?1", [chat_id], |r| r.get(0)).unwrap_or_else(|_| "Unknown".to_string());
         let folder_id: Option<i64> = conn.query_row("SELECT folder_id FROM chats WHERE id = ?1", [chat_id], |r| r.get(0)).unwrap_or(None);
         if let Some(fid) = folder_id {
@@ -582,7 +621,10 @@ fn handle_open(target: &OpenTarget) {
         OpenTarget::Chats { target } => {
             if let Some(id) = resolve_chat(&conn, target, "deleted_at IS NULL") {
                 let title: String = conn.query_row("SELECT title FROM chats WHERE id = ?1", [id], |r| r.get(0)).unwrap();
-                conn.execute("UPDATE settings SET active_chat_id = ?1, last_chat_id = ?1, active_folder_id = (SELECT folder_id FROM chats WHERE id = ?1) WHERE id = 1", [id]).unwrap();
+                let mut session = read_session();
+                session.active_chat_id = Some(id);
+                session.active_folder_id = conn.query_row("SELECT folder_id FROM chats WHERE id = ?1", [id], |r| r.get(0)).unwrap_or(None);
+                write_session(&session);
                 print_result(&format!("Opened chat: {} (ID: {})", title, id));
             } else {
                 eprintln!("Chat not found.");
@@ -602,14 +644,20 @@ fn handle_open(target: &OpenTarget) {
                 if let Some(chat_query) = query {
                     let targs = TargetArgs { id: None, name: None, query: Some(chat_query.clone()) };
                     if let Some(cid) = resolve_chat(&conn, &targs, &format!("folder_id = {} AND deleted_at IS NULL", fid)) {
-                        conn.execute("UPDATE settings SET active_chat_id = ?1, last_chat_id = ?1, active_folder_id = ?2 WHERE id = 1", (cid, fid)).unwrap();
+                        let mut session = read_session();
+                        session.active_chat_id = Some(cid);
+                        session.active_folder_id = Some(fid);
+                        write_session(&session);
                         let title: String = conn.query_row("SELECT title FROM chats WHERE id = ?1", [cid], |r| r.get(0)).unwrap();
                         print_result(&format!("Opened workspace: {} (ID: {}), chat: {} (ID: {})", fname, fid, title, cid));
                     } else {
                         eprintln!("Chat '{}' not found in workspace '{}'.", chat_query, fname);
                     }
                 } else {
-                    conn.execute("UPDATE settings SET active_folder_id = ?1, active_chat_id = NULL WHERE id = 1", [fid]).unwrap();
+                    let mut session = read_session();
+                    session.active_folder_id = Some(fid);
+                    session.active_chat_id = None;
+                    write_session(&session);
                     print_result(&format!("Opened workspace: {} (ID: {})", fname, fid));
                 }
             } else {
@@ -620,7 +668,9 @@ fn handle_open(target: &OpenTarget) {
             let last_id: Option<i64> = conn.query_row("SELECT last_chat_id FROM settings WHERE id = 1", (), |r| r.get(0)).unwrap_or(None);
             if let Some(id) = last_id {
                 let title: String = conn.query_row("SELECT title FROM chats WHERE id = ?1", [id], |r| r.get(0)).unwrap_or_else(|_| "Unknown".to_string());
-                conn.execute("UPDATE settings SET active_chat_id = ?1 WHERE id = 1", [id]).unwrap();
+                let mut session = read_session();
+                session.active_chat_id = Some(id);
+                write_session(&session);
                 print_result(&format!("Opened chat: {} (ID: {})", title, id));
             } else {
                 eprintln!("No previous chat to go back to.");
@@ -919,18 +969,20 @@ async fn handle_send(message: &str, do_stream: bool) {
         },
     ).unwrap();
 
+    let session = read_session();
+
     if settings.api_key.is_empty() {
         eprintln!("API key is missing. Please set it in the GUI Settings.");
         std::process::exit(1);
     }
 
-    let target_chat_id = settings.active_chat_id;
-    if target_chat_id.is_none() {
-        eprintln!("No active chat. Use `cubiq new` to create one or `cubiq open` to select one.");
-        std::process::exit(2);
-    }
-    
-    let chat_id = target_chat_id.unwrap();
+    let chat_id = match session.active_chat_id {
+        Some(id) => id,
+        None => {
+            eprintln!("No active chat. Use `cubiq new` to create one or `cubiq open` to select one.");
+            std::process::exit(2);
+        }
+    };
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
     
     conn.execute(
@@ -974,14 +1026,8 @@ async fn handle_send(message: &str, do_stream: bool) {
 }
 
 fn handle_close() {
-    let conn = open_db().expect("Failed to open DB");
-    let active_chat_id: Option<i64> = conn.query_row("SELECT active_chat_id FROM settings WHERE id = 1", (), |r| r.get(0)).unwrap_or(None);
-    if active_chat_id.is_some() {
-        conn.execute("UPDATE settings SET active_chat_id = NULL WHERE id = 1", []).unwrap();
-        print_result("Closed active chat.");
-    } else {
-        print_result("No active chat.");
-    }
+    clear_session();
+    print_result("Closed active chat context.");
 }
 
 fn handle_new(title_opt: Option<&str>, workspace_opt: Option<&str>, preset_opt: Option<&str>) {
@@ -1014,7 +1060,7 @@ fn handle_new(title_opt: Option<&str>, workspace_opt: Option<&str>, preset_opt: 
         }
         fid
     } else {
-        conn.query_row("SELECT active_folder_id FROM settings WHERE id = 1", (), |r| r.get(0)).unwrap_or(None)
+        read_session().active_folder_id
     };
     
     let mut preset_locked = 0;
@@ -1045,7 +1091,12 @@ fn handle_new(title_opt: Option<&str>, workspace_opt: Option<&str>, preset_opt: 
     ).unwrap();
     let new_id = conn.last_insert_rowid();
     
-    conn.execute("UPDATE settings SET active_chat_id = ?1, last_chat_id = ?1 WHERE id = 1", [new_id]).unwrap();
+    let mut session = read_session();
+    session.active_chat_id = Some(new_id);
+    session.active_folder_id = folder_id;
+    write_session(&session);
+
+    conn.execute("UPDATE settings SET last_chat_id = ?1 WHERE id = 1", [new_id]).unwrap();
     
     print_result(&format!("Created chat: {} (ID: {})", title, new_id));
 }
