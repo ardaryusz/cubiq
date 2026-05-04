@@ -4,6 +4,8 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { Pin, Trash2, ExternalLink, X, Square } from 'lucide-react';
 import MarkdownRenderer from './components/Chat/MarkdownRenderer';
+import { hasUnclosedFence } from './utils/markdown';
+import type { StreamDeltaPayload, StreamDonePayload, StreamErrorPayload } from './types/streaming';
 import * as ipc from './lib/ipc';
 import styles from './QuickAskApp.module.css';
 
@@ -11,20 +13,6 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   isStreaming?: boolean;
-}
-
-interface StreamDeltaPayload {
-  request_id: string;
-  delta: string;
-}
-
-interface StreamDonePayload {
-  request_id: string;
-}
-
-interface StreamErrorPayload {
-  request_id: string;
-  message: string;
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -79,12 +67,6 @@ export default function QuickAskApp() {
   const [renderText, setRenderText] = useState('');
   const needsRenderRef = useRef(false);
   const renderRafRef = useRef<number | null>(null);
-
-  // Helper to check if markdown contains an unclosed code fence
-  const hasUnclosedFence = (text: string) => {
-    const fences = text.match(/```/g);
-    return fences ? fences.length % 2 !== 0 : false;
-  };
 
   // Keep isPinnedRef in sync
   useEffect(() => { isPinnedRef.current = isPinned; }, [isPinned]);

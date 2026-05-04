@@ -21,9 +21,6 @@ function App() {
   const activeFolderId = useAppStore(state => state.activeFolderId);
   const activeChatId = useAppStore(state => state.activeChatId);
 
-  // Temporary logging for routing
-  console.log(`[App] Render: activeChatId=${activeChatId}, activeFolderId=${activeFolderId}`);
-
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_WIDTH);
     return saved ? Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Number(saved))) : SIDEBAR_DEFAULT;

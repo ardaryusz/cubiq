@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useAppStore } from '../../store';
 import { SendHorizonal, Trash2, Edit2, Archive, AlertCircle, Lock, ChevronDown, Square } from 'lucide-react';
+import { hasUnclosedFence } from '../../utils/markdown';
 import MarkdownRenderer from './MarkdownRenderer';
 import styles from './ChatArea.module.css';
 
@@ -80,16 +81,7 @@ export default function ChatArea() {
   const needsRenderRef = useRef(false);
   const renderRafRef = useRef<number | null>(null);
 
-  // Helper to check if markdown contains an unclosed code fence
-  const hasUnclosedFence = (text: string) => {
-    const fences = text.match(/```/g);
-    return fences ? fences.length % 2 !== 0 : false;
-  };
-
   const activeChat = chats.find(c => c.id === activeChatId);
-  
-  // Temporary logging
-  console.log(`[ChatArea] Render: activeChatId=${activeChatId}, activeChatFound=${!!activeChat}`);
 
   // Deterministic greeting: pick by hashing activeChatId so it is stable
   // across re-renders of the same chat but changes when the chat changes.

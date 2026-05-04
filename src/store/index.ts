@@ -3,21 +3,7 @@ import type { Chat, DeletedChat, Folder, Settings, Preset } from '../types';
 import * as ipc from '../lib/ipc';
 import { emit, listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-
-// ── Tauri event payload shapes ───────────────────────────────────────────────
-interface StreamDeltaPayload {
-  request_id: string;
-  delta: string;
-}
-
-interface StreamDonePayload {
-  request_id: string;
-}
-
-interface StreamErrorPayload {
-  request_id: string;
-  message: string;
-}
+import type { StreamDeltaPayload, StreamDonePayload, StreamErrorPayload } from '../types/streaming';
 
 // Augment Window so we can use a typed sentinel without `as any`.
 declare global {
