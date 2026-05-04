@@ -381,35 +381,8 @@ fn is_leap(y: i32) -> bool {
 // ── Chat Preset Management ──────────────────────────────────────────
 
 #[tauri::command]
-pub fn update_chat_preset(chat_id: i64, preset_id: i64, state: State<'_, AppState>) -> Result<(), String> {
-    let db = state.db.lock().unwrap();
-
-    // Check that the chat is not locked
-    let locked: bool = db.query_row(
-        "SELECT preset_locked FROM chats WHERE id = ?1",
-        [&chat_id],
-        |row| row.get(0),
-    ).map_err(|e| e.to_string())?;
-
-    if locked {
-        return Err("Cannot change preset: this chat's preset is locked after the first message was sent.".to_string());
-    }
-
-    // Read the preset data for snapshot
-    let (name, model_url, model_name, customization_prompt): (String, String, String, String) = db.query_row(
-        "SELECT name, model_url, model_name, customization_prompt FROM presets WHERE id = ?1",
-        [&preset_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-    ).map_err(|e| format!("Preset not found: {}", e))?;
-
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
-
-    db.execute(
-        "UPDATE chats SET preset_id = ?1, preset_name_snapshot = ?2, model_url_snapshot = ?3, model_name_snapshot = ?4, customization_snapshot = ?5, updated_at = ?6 WHERE id = ?7",
-        rusqlite::params![preset_id, name, model_url, model_name, customization_prompt, now, chat_id],
-    ).map_err(|e| e.to_string())?;
-
-    Ok(())
+pub fn update_chat_preset(_chat_id: i64, _preset_id: i64, _state: State<'_, AppState>) -> Result<(), String> {
+    Err("Cannot change preset: this chat's preset is locked after creation.".to_string())
 }
 
 #[tauri::command]
@@ -466,27 +439,25 @@ pub fn get_chats(state: State<'_, AppState>) -> Result<Vec<Chat>, String> {
 }
 
 #[tauri::command]
-pub fn create_chat(title: String, state: State<'_, AppState>) -> Result<i64, String> {
+pub fn create_chat(title: String, preset_id: Option<i64>, state: State<'_, AppState>) -> Result<i64, String> {
     let db = state.db.lock().unwrap();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
 
-    // Read selected_preset_id from settings to populate snapshot
-    let preset_data: Option<(i64, String, String, String, String)> = {
-        let selected_id: Option<i64> = db.query_row(
-            "SELECT selected_preset_id FROM settings WHERE id = 1",
-            (),
-            |row| row.get(0),
-        ).map_err(|e| e.to_string())?;
+    // Resolve preset_id: use provided, then cli default, then app default, then first available
+    let resolved_preset_id: Option<i64> = preset_id.or_else(|| {
+        let app_default: Option<i64> = db.query_row("SELECT selected_preset_id FROM settings WHERE id = 1", (), |r| r.get(0)).unwrap_or(None);
+        if app_default.is_some() { return app_default; }
+        db.query_row("SELECT id FROM presets ORDER BY id ASC LIMIT 1", (), |r| r.get(0)).ok()
+    });
 
-        if let Some(pid) = selected_id {
-            db.query_row(
-                "SELECT id, name, model_url, model_name, customization_prompt FROM presets WHERE id = ?1",
-                [&pid],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
-            ).ok()
-        } else {
-            None
-        }
+    let preset_data: Option<(i64, String, String, String, String)> = if let Some(pid) = resolved_preset_id {
+        db.query_row(
+            "SELECT id, name, model_url, model_name, customization_prompt FROM presets WHERE id = ?1",
+            [&pid],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        ).ok()
+    } else {
+        None
     };
 
     let (preset_id, preset_name, model_url, model_name, customization) = match preset_data {
@@ -496,7 +467,7 @@ pub fn create_chat(title: String, state: State<'_, AppState>) -> Result<i64, Str
 
     db.execute(
         "INSERT INTO chats (title, created_at, updated_at, archived, preset_id, preset_name_snapshot, model_url_snapshot, model_name_snapshot, customization_snapshot, preset_locked, user_edited_title, folder_id)
-         VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, 0, 0, NULL)",
+         VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, 1, 0, NULL)",
         rusqlite::params![title, now, now, preset_id, preset_name, model_url, model_name, customization],
     ).map_err(|e| e.to_string())?;
 
@@ -948,7 +919,7 @@ pub fn move_chat_to_folder(chat_id: i64, folder_id: Option<i64>, state: State<'_
 
 // ── Find Empty Chat ───────────────────────────────────────────────────
 
-/// Returns the id of the first unlocked, unarchived, non-deleted, message-less "New Chat" if one exists.
+/// Returns the id of the first unarchived, non-deleted, message-less "New Chat" if one exists.
 #[tauri::command]
 pub fn find_empty_chat(state: State<'_, AppState>) -> Result<Option<i64>, String> {
     let db = state.db.lock().unwrap();
@@ -957,7 +928,6 @@ pub fn find_empty_chat(state: State<'_, AppState>) -> Result<Option<i64>, String
          WHERE title = 'New Chat'
            AND archived = 0
            AND deleted_at IS NULL
-           AND preset_locked = 0
            AND NOT EXISTS (
                SELECT 1 FROM messages WHERE messages.chat_id = chats.id
            )

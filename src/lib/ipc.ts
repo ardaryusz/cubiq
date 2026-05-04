@@ -46,7 +46,7 @@ export const lockChatPreset = (chatId: number) =>
 
 // ── Chats ────────────────────────────────────────────────────────────
 export const getChats = () => invoke<Chat[]>('get_chats');
-export const createChat = (title: string) => invoke<number>('create_chat', { title });
+export const createChat = (title: string, presetId?: number | null) => invoke<number>('create_chat', { title, presetId: presetId ?? null });
 export const renameChat = (id: number, title: string) => invoke<void>('rename_chat', { id, title });
 export const archiveChat = (id: number, archived: boolean) => invoke<void>('archive_chat', { id, archived });
 export const deleteChat = (id: number) => invoke<void>('delete_chat', { id });

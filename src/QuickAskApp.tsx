@@ -341,8 +341,8 @@ export default function QuickAskApp() {
       const history = newMessages.map(m => ({ role: m.role, content: m.content }));
       await ipc.startEphemeralStream(history, requestId);
       console.log('[QA send] startEphemeralStream returned OK for', requestId);
-    } catch (e: any) {
-      const msg = typeof e === 'string' ? e : e?.message ?? String(e);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : String(e);
       console.error('[QA send] startEphemeralStream error:', msg);
       setError(msg.includes('API key is not set') ? 'missing_key' : msg);
       setMessages(prev => {

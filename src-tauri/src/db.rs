@@ -181,6 +181,16 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection> {
         conn.pragma_update(None, "user_version", 5)?;
     }
 
+    if version < 6 {
+        migrate_v5_to_v6(&conn)?;
+        conn.pragma_update(None, "user_version", 6)?;
+    }
+
+    if version < 7 {
+        migrate_v6_to_v7(&conn)?;
+        conn.pragma_update(None, "user_version", 7)?;
+    }
+
     // Purge expired soft-deleted chats on every startup
     purge_expired_deleted_chats(&conn)?;
 
@@ -353,6 +363,80 @@ fn migrate_v4_to_v5(conn: &Connection) -> Result<()> {
     tx.execute("ALTER TABLE settings ADD COLUMN active_folder_id INTEGER", ())?;
     tx.execute("ALTER TABLE settings ADD COLUMN last_chat_id INTEGER", ())?;
     tx.execute("ALTER TABLE settings ADD COLUMN cli_preset_id INTEGER", ())?;
+
+    tx.commit()?;
+    Ok(())
+}
+
+/// Migration from v5 (CLI state) to v6 (Preset Locking & Fallbacks).
+///
+/// - Ensure all existing chats have a preset assigned.
+/// - Lock all existing chats to their current preset (or fallback).
+fn migrate_v5_to_v6(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+
+    // 1. Get fallback preset (app default or first available)
+    let fallback_preset_id: Option<i64> = tx.query_row(
+        "SELECT selected_preset_id FROM settings WHERE id = 1",
+        (),
+        |r| r.get(0),
+    ).unwrap_or(None).or_else(|| {
+        tx.query_row("SELECT id FROM presets ORDER BY id ASC LIMIT 1", (), |r| r.get(0)).ok()
+    });
+
+    if let Some(pid) = fallback_preset_id {
+        // Read preset details to snapshot
+        if let Ok((name, model_url, model_name, cust)) = tx.query_row(
+            "SELECT name, model_url, model_name, customization_prompt FROM presets WHERE id = ?1",
+            [pid],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))
+        ) {
+            // Update any chat that doesn't have a preset assigned
+            tx.execute(
+                "UPDATE chats SET preset_id = ?1, preset_name_snapshot = ?2, model_url_snapshot = ?3, model_name_snapshot = ?4, customization_snapshot = ?5 WHERE preset_id IS NULL",
+                rusqlite::params![pid, name, model_url, model_name, cust],
+            )?;
+        }
+    }
+
+    // 2. Lock ALL existing chats
+    tx.execute("UPDATE chats SET preset_locked = 1", ())?;
+
+    tx.commit()?;
+    Ok(())
+}
+
+/// Migration from v6 to v7: Re-lock any chats that were created with preset_locked=0
+/// due to a race between schema migration and the old create_chat logic.
+/// Idempotent — already-locked chats are unaffected.
+fn migrate_v6_to_v7(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+
+    // Get fallback preset (app default or first available)
+    let fallback_preset_id: Option<i64> = tx.query_row(
+        "SELECT selected_preset_id FROM settings WHERE id = 1",
+        (),
+        |r| r.get(0),
+    ).unwrap_or(None).or_else(|| {
+        tx.query_row("SELECT id FROM presets ORDER BY id ASC LIMIT 1", (), |r| r.get(0)).ok()
+    });
+
+    // Assign preset snapshot to any chat still missing one
+    if let Some(pid) = fallback_preset_id {
+        if let Ok((name, model_url, model_name, cust)) = tx.query_row(
+            "SELECT name, model_url, model_name, customization_prompt FROM presets WHERE id = ?1",
+            [pid],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))
+        ) {
+            tx.execute(
+                "UPDATE chats SET preset_id = ?1, preset_name_snapshot = ?2, model_url_snapshot = ?3, model_name_snapshot = ?4, customization_snapshot = ?5 WHERE preset_id IS NULL",
+                rusqlite::params![pid, name, model_url, model_name, cust],
+            )?;
+        }
+    }
+
+    // Lock every chat that is still unlocked
+    tx.execute("UPDATE chats SET preset_locked = 1 WHERE preset_locked = 0", ())?;
 
     tx.commit()?;
     Ok(())

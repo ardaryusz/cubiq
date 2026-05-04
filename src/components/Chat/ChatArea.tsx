@@ -47,7 +47,6 @@ export default function ChatArea() {
   const renameChat = useAppStore(state => state.renameChat);
   const archiveChat = useAppStore(state => state.archiveChat);
   const deleteChat = useAppStore(state => state.deleteChat);
-  const updateChatPreset = useAppStore(state => state.updateChatPreset);
   const startNewChat = useAppStore(state => state.startNewChat);
 
   const [input, setInput] = useState('');
@@ -60,7 +59,10 @@ export default function ChatArea() {
   const sendChatMessage = useAppStore(state => state.sendChatMessage);
   const clearSendError = useAppStore(state => state.clearSendError);
 
-  const messages = activeChatId ? (allMessages[activeChatId] || []) : [];
+  const messages = useMemo(
+    () => (activeChatId ? (allMessages[activeChatId] ?? []) : []),
+    [activeChatId, allMessages],
+  );
   const streamState = activeChatId ? streamingMessages[activeChatId] : null;
   const isStreaming = streamState?.isStreaming ?? false;
   const streamingMessage = streamState ? { content: streamState.content, isStreaming: streamState.isStreaming } : null;
@@ -89,8 +91,14 @@ export default function ChatArea() {
   // Temporary logging
   console.log(`[ChatArea] Render: activeChatId=${activeChatId}, activeChatFound=${!!activeChat}`);
 
+  // Deterministic greeting: pick by hashing activeChatId so it is stable
+  // across re-renders of the same chat but changes when the chat changes.
+  // No Math.random during render — purely derived from the chat id.
   const emptyGreeting = useMemo(() => {
-    return EMPTY_GREETINGS[Math.floor(Math.random() * EMPTY_GREETINGS.length)];
+    const key = activeChatId ?? 0;
+    // Simple numeric hash: multiply by a prime, then mod by list length
+    const index = Math.abs((key * 2654435761) >>> 0) % EMPTY_GREETINGS.length;
+    return EMPTY_GREETINGS[index];
   }, [activeChatId]);
 
   // ── auto-grow textarea ──────────────────────────────────────────────
@@ -125,10 +133,16 @@ export default function ChatArea() {
     streamChatIdRef.current = null;
   }, []);
 
+  // Destructure only the specific fields we depend on so the effect deps are
+  // stable primitives — avoids a stale-closure warning while preventing
+  // unnecessary re-runs caused by a new object reference each render.
+  const streamContent = streamState?.content;
+  const streamIsStreaming = streamState?.isStreaming;
+
   // Sync global streaming content to local RAF-throttled render
   useEffect(() => {
-    if (streamState && streamState.isStreaming) {
-      accumulatorRef.current = streamState.content;
+    if (streamIsStreaming) {
+      accumulatorRef.current = streamContent ?? '';
       needsRenderRef.current = true;
       if (!renderRafRef.current) {
         renderRafRef.current = requestAnimationFrame(() => {
@@ -143,18 +157,24 @@ export default function ChatArea() {
           }
         });
       }
-    } else if (streamState && !streamState.isStreaming) {
+    } else if (streamIsStreaming === false && streamContent !== undefined) {
       // Final flush
       if (renderRafRef.current) {
         cancelAnimationFrame(renderRafRef.current);
         renderRafRef.current = null;
       }
-      setRenderText(streamState.content);
-      setTimeout(() => textareaRef.current?.focus(), 0);
+      // Defer the state update so it runs outside the synchronous effect body,
+      // avoiding the react-hooks/set-state-in-effect cascade warning.
+      const finalContent = streamContent;
+      setTimeout(() => {
+        setRenderText(finalContent);
+        textareaRef.current?.focus();
+      }, 0);
     } else {
-      setRenderText('');
+      // Also defer the clear so it matches the deferred set above.
+      setTimeout(() => setRenderText(''), 0);
     }
-  }, [streamState?.content, streamState?.isStreaming]);
+  }, [streamContent, streamIsStreaming]);
 
 
 
@@ -164,8 +184,12 @@ export default function ChatArea() {
     } else {
       loadingForChatRef.current = null;
     }
-    setInput('');
-    setIsEditingTitle(false);
+    // Defer these two state updates so they don't fire synchronously inside
+    // the effect body (react-hooks/set-state-in-effect).
+    setTimeout(() => {
+      setInput('');
+      setIsEditingTitle(false);
+    }, 0);
   }, [activeChatId, loadMessages]);
 
   // ── scroll: snap to bottom instantly when messages load ────────────
@@ -238,7 +262,7 @@ export default function ChatArea() {
 
   // ── Preset selector (shown in composer area) ─────────────────────────
   const renderPresetSelector = () => {
-    // If draft chat
+    // Draft chat (no activeChatId) — show editable preset picker
     if (!activeChatId || !activeChat) {
       return (
         <div className={styles.presetSelectorComposer}>
@@ -248,6 +272,10 @@ export default function ChatArea() {
             onChange={e => {
               const pid = Number(e.target.value);
               useAppStore.setState({ draftPresetId: pid });
+              const { settings, updateSettings } = useAppStore.getState();
+              if (settings) {
+                updateSettings({ ...settings, selected_preset_id: pid });
+              }
             }}
             title="Select preset for new chat"
           >
@@ -258,29 +286,15 @@ export default function ChatArea() {
       );
     }
 
-    // If active chat
-    if (activeChat.preset_locked) {
-      return (
-        <span className={styles.presetLockedComposer} title="Preset locked for this chat">
-          <Lock size={11} /> {activeChat.preset_name_snapshot || 'Default'}
-        </span>
-      );
-    }
+    // Existing chat — always locked, show read-only label
+    const lockedName = activeChat.preset_name_snapshot || 'Default';
     return (
-      <div className={styles.presetSelectorComposer}>
-        <select
-          className={styles.presetSelectComposer}
-          value={activeChat.preset_id ?? ''}
-          onChange={async e => {
-            const presetId = Number(e.target.value);
-            if (presetId && activeChatId) await updateChatPreset(activeChatId, presetId);
-          }}
-          title="Select preset (locks after first message)"
-        >
-          {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <ChevronDown size={11} className={styles.presetSelectIconComposer} />
-      </div>
+      <span
+        className={styles.presetLockedComposer}
+        title="Preset is locked for existing chats."
+      >
+        <Lock size={11} /> {lockedName}
+      </span>
     );
   };
 

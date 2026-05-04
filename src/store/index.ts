@@ -4,6 +4,28 @@ import * as ipc from '../lib/ipc';
 import { emit, listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
+// ── Tauri event payload shapes ───────────────────────────────────────────────
+interface StreamDeltaPayload {
+  request_id: string;
+  delta: string;
+}
+
+interface StreamDonePayload {
+  request_id: string;
+}
+
+interface StreamErrorPayload {
+  request_id: string;
+  message: string;
+}
+
+// Augment Window so we can use a typed sentinel without `as any`.
+declare global {
+  interface Window {
+    __streamingListenersInited?: boolean;
+  }
+}
+
 interface AppState {
   chats: Chat[];
   settings: Settings | null;
@@ -140,7 +162,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         folders,
         deletedChats,
         isLoading: false,
-        draftPresetId: presets.length > 0 ? (presets[0].id ?? null) : null,
+        draftPresetId: settings.selected_preset_id ?? (presets.length > 0 ? (presets[0].id ?? null) : null),
         expandedFolders: new Set(),
         workspacesCollapsed: (folders.length ?? 0) >= 6,
         activeChatId: settings.active_chat_id ?? null,
@@ -154,8 +176,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveChat: (id) => {
     set({ activeChatId: id, activeFolderId: null });
     if (id === null) {
-      const { presets } = get();
-      set({ draftPresetId: presets.length > 0 ? presets[0].id : null });
+      const { presets, settings } = get();
+      set({ draftPresetId: settings?.selected_preset_id ?? (presets.length > 0 ? presets[0].id : null) });
     }
     const { settings, updateSettings } = get();
     if (settings) {
@@ -247,7 +269,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   startChatWithFirstPrompt: async (folderId, prompt, presetId) => {
     try {
-      const id = await ipc.createChat("New Chat");
+      const id = await ipc.createChat("New Chat", presetId);
       if (!id) return;
 
       // 1. Optimistic insert
@@ -257,7 +279,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         created_at: Date.now(),
         updated_at: Date.now(),
         archived: false,
-        preset_locked: false,
+        preset_locked: true,
         user_edited_title: false,
         folder_id: folderId
       });
@@ -267,15 +289,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         ipc.moveChatToFolder(id, folderId).catch(console.error);
       }
 
-      // 3. Set preset if provided
-      if (presetId) {
-        await get().updateChatPreset(id, presetId);
-      }
-
-      // 4. Navigate instantly (sets activeChatId and clears activeFolderId)
+      // 3. Navigate instantly (sets activeChatId and clears activeFolderId)
       get().setActiveChat(id);
 
-      // 5. Send the prompt and start streaming
+      // 4. Send the prompt and start streaming
       await get().sendChatMessage(id, prompt);
     } catch (e) {
       console.error("Failed to start chat with prompt:", e);
@@ -297,10 +314,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   initStreamingListeners: () => {
     // Prevent duplicate listeners
-    if ((window as any).__streamingListenersInited) return;
-    (window as any).__streamingListenersInited = true;
+    if (window.__streamingListenersInited) return;
+    window.__streamingListenersInited = true;
 
-    listen<any>('cubiq:stream_delta', ({ payload }) => {
+    listen<StreamDeltaPayload>('cubiq:stream_delta', ({ payload }) => {
       // Parse chatId from request_id if it follows "chat-{chatId}-..."
       const parts = payload.request_id?.split('-');
       if (parts && parts[0] === 'chat' && parts[1]) {
@@ -321,7 +338,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }).catch(console.error);
 
-    listen<any>('cubiq:stream_done', async ({ payload }) => {
+    listen<StreamDonePayload>('cubiq:stream_done', async ({ payload }) => {
       const parts = payload.request_id?.split('-');
       if (parts && parts[0] === 'chat' && parts[1]) {
         const chatId = parseInt(parts[1], 10);
@@ -367,7 +384,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }).catch(console.error);
 
-    listen<any>('cubiq:stream_error', ({ payload }) => {
+    listen<StreamErrorPayload>('cubiq:stream_error', ({ payload }) => {
       const parts = payload.request_id?.split('-');
       if (parts && parts[0] === 'chat' && parts[1]) {
         const chatId = parseInt(parts[1], 10);
@@ -434,23 +451,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       const { draftPresetId, refreshChats } = get();
       
       // 1. Create the chat row
-      const id = await ipc.createChat('New Chat');
+      const id = await ipc.createChat('New Chat', draftPresetId);
       if (!id) return;
 
-      // 2. Set the preset if we have a draft one
-      if (draftPresetId) {
-        await ipc.updateChatPreset(id, draftPresetId);
-      }
-
-      // 3. Set as active
+      // 2. Set as active
       set({ activeChatId: id, draftPresetId: null });
 
-      // 4. Send the message (this handles locking the preset + auto-titling)
-      // Note: We don't call ChatArea's doSend, we do it via IPC here to stay atomic if possible
-      // but for simplicity we'll just let ChatArea pick up the new activeChatId.
-      // Wait, if we change activeChatId here, ChatArea's useEffect will clear the input.
-      // We should probably pass the callback or just do the logic here.
-      
       // Let's just return the ID and let ChatArea handle the sequential calls for now.
       await refreshChats();
     } catch (error) {

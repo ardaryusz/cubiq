@@ -6,6 +6,43 @@ This project loosely follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.3] - 2026-05-04
+
+### Added
+
+- Added `cubiq list presets` to list all available presets from the CLI.
+- Added CLI preset visibility to `cubiq status`, including the currently selected CLI default preset.
+- Added external-link handling so links clicked inside Cubiq open in the system default browser instead of navigating inside the Tauri WebView.
+- Added safe protocol filtering for external links:
+  - allowed: `http:`, `https:`, `mailto:`, `tel:`
+  - blocked: `javascript:`, `file:`, `data:`, and other unsafe protocols
+
+### Fixed
+
+- Fixed GUI preset locking so existing chats always show a locked/read-only preset instead of an editable selector.
+- Fixed legacy or previously-created chats that could still have `preset_locked = 0` by adding a migration to lock remaining unlocked chats.
+- Fixed `find_empty_chat` behavior so locked chats do not break draft-chat lookup logic.
+- Fixed CLI preset behavior so CLI default preset is separate from the GUI default preset.
+- Fixed lint/type issues introduced during preset and link-handling work.
+
+### Changed
+
+- Existing chats now have immutable presets. Presets are selected when a chat is created and cannot be changed afterward.
+- New chat screen keeps an editable preset selector for choosing the default/new-chat preset.
+- CLI chat creation now resolves presets in this order:
+  1. explicit `--preset`
+  2. CLI default preset
+  3. app default preset
+  4. safe fallback/default preset
+- `cubiq send` now uses the chat’s locked preset instead of the current app or CLI default.
+
+### Internal
+
+- Added Tauri opener integration via `tauri-plugin-opener` and `@tauri-apps/plugin-opener`.
+- Added global external-link interception in the frontend.
+- Added idempotent link-interceptor setup to avoid duplicate handlers during dev/HMR.
+- Added database migration v7 to lock any remaining unlocked chat presets.
+
 ## [1.0.2] - 2026-05-02
 
 ### Fixed

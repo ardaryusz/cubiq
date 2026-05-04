@@ -93,7 +93,7 @@ export default function SettingsModal() {
   const [editor, setEditor] = useState<PresetEditorState | null>(null);
 
   // ── Local Ticker for countdowns ──────────────────────────────────
-  const [nowValue, setNowValue] = useState(Date.now());
+  const [nowValue, setNowValue] = useState<number>(() => Date.now());
 
   // Trigger purge and refresh whenever Trash is selected OR Settings opens
   useEffect(() => {
@@ -132,10 +132,14 @@ export default function SettingsModal() {
   // Exit trash select mode when tab changes
   useEffect(() => {
     if (activeTab !== 'trash') {
-      setTrashSelectMode(false);
-      setTrashSelectedIds(new Set());
-      setLastTrashSelectedId(null);
-      setTrashSearch('');
+      // Defer so the state updates happen outside the synchronous effect body
+      // (react-hooks/set-state-in-effect).
+      setTimeout(() => {
+        setTrashSelectMode(false);
+        setTrashSelectedIds(new Set());
+        setLastTrashSelectedId(null);
+        setTrashSearch('');
+      }, 0);
     }
   }, [activeTab]);
 
@@ -148,7 +152,11 @@ export default function SettingsModal() {
       setTrashSelectMode(true);
       setTrashSelectedIds(prev => {
         const next = new Set(prev);
-        next.has(id) ? next.delete(id) : next.add(id);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
         return next;
       });
       setLastTrashSelectedId(id);
@@ -173,7 +181,11 @@ export default function SettingsModal() {
     if (trashSelectMode) {
       setTrashSelectedIds(prev => {
         const next = new Set(prev);
-        next.has(id) ? next.delete(id) : next.add(id);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
         return next;
       });
       setLastTrashSelectedId(id);

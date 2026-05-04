@@ -254,6 +254,8 @@ enum ListTarget {
     Archived,
     /// List deleted chats (trash)
     Deleted,
+    /// List available presets
+    Presets,
 }
 
 static DB_OVERRIDE: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -368,8 +370,8 @@ fn handle_preset(name: &str) {
     
     let mut output = String::new();
     if let Some(id) = preset_id {
-        conn.execute("UPDATE settings SET selected_preset_id = ?1 WHERE id = 1", [id]).unwrap();
-        output.push_str(&format!("Default preset set to '{}' (ID: {})\n", name, id));
+        conn.execute("UPDATE settings SET cli_preset_id = ?1 WHERE id = 1", [id]).unwrap();
+        output.push_str(&format!("CLI Default preset set to '{}' (ID: {})\n", name, id));
     } else {
         eprintln!("Preset not found: {}", name);
         output.push_str("Available presets:\n");
@@ -444,6 +446,17 @@ fn handle_status() {
     } else {
         output.push_str("Active Workspace: None\n");
     }
+    
+    if let Some(cli_pid) = settings.cli_preset_id {
+        if let Ok(pname) = conn.query_row("SELECT name FROM presets WHERE id = ?1", [cli_pid], |r| r.get::<_, String>(0)) {
+            output.push_str(&format!("CLI Default Preset: {} (ID: {})\n", pname, cli_pid));
+        } else {
+            output.push_str(&format!("CLI Default Preset: Unknown (ID: {})\n", cli_pid));
+        }
+    } else {
+        output.push_str("CLI Default Preset: None\n");
+    }
+    
     let is_tty = io::stdout().is_terminal();
     let _ = write_text(&output, is_tty);
 }
@@ -528,6 +541,30 @@ fn handle_list(target: &ListTarget) {
                 }
             }
             if !found { output.push_str("No chats found.\n"); }
+        }
+        ListTarget::Presets => {
+            let app_default_id: Option<i64> = conn.query_row("SELECT selected_preset_id FROM settings WHERE id = 1", (), |r| r.get(0)).unwrap_or(None);
+            let cli_default_id: Option<i64> = conn.query_row("SELECT cli_preset_id FROM settings WHERE id = 1", (), |r| r.get(0)).unwrap_or(None);
+            
+            let mut stmt = conn.prepare("SELECT id, name FROM presets ORDER BY name ASC").unwrap();
+            let rows = stmt.query_map((), |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))).unwrap();
+            for row in rows {
+                if let Ok((id, name)) = row {
+                    found = true;
+                    let is_app = app_default_id == Some(id);
+                    let is_cli = cli_default_id == Some(id);
+                    let mut markers = Vec::new();
+                    if is_app { markers.push("App Default"); }
+                    if is_cli { markers.push("CLI Default"); }
+                    
+                    if markers.is_empty() {
+                        output.push_str(&format!("[Preset {}] {}\n", id, name));
+                    } else {
+                        output.push_str(&format!("[Preset {}] {} ({})\n", id, name, markers.join(", ")));
+                    }
+                }
+            }
+            if !found { output.push_str("No presets found.\n"); }
         }
     }
     let is_tty = io::stdout().is_terminal();
@@ -983,6 +1020,19 @@ async fn handle_send(message: &str, do_stream: bool) {
             std::process::exit(2);
         }
     };
+    
+    let (snap_url, snap_model, snap_cust): (Option<String>, Option<String>, Option<String>) = conn.query_row(
+        "SELECT model_url_snapshot, model_name_snapshot, customization_snapshot FROM chats WHERE id = ?1",
+        [chat_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    ).unwrap_or((None, None, None));
+    
+    let (model_url, model_name, customization_prompt) = if snap_url.is_some() && snap_model.is_some() {
+        (snap_url.unwrap(), snap_model.unwrap(), snap_cust.unwrap_or_default())
+    } else {
+        (settings.model_url.clone(), settings.model_name.clone(), String::new())
+    };
+
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
     
     conn.execute(
@@ -993,6 +1043,13 @@ async fn handle_send(message: &str, do_stream: bool) {
 
     let mut stmt = conn.prepare("SELECT role, content FROM messages WHERE chat_id = ?1 ORDER BY created_at ASC").unwrap();
     let mut messages: Vec<(String, String)> = Vec::new();
+    
+    const CUBIQ_IDENTITY_PROMPT: &str = "You are Cubiq, the AI assistant inside the Cubiq desktop app. Identify yourself as Cubiq only when the user asks who you are. Do not identify yourself as ChatGPT, Meta AI, Claude, Gemini, or any other assistant brand. Do not mention your name in every response — only when directly asked.";
+    messages.push(("system".to_string(), CUBIQ_IDENTITY_PROMPT.to_string()));
+    if !customization_prompt.is_empty() {
+        messages.push(("system".to_string(), customization_prompt));
+    }
+    
     let rows = stmt.query_map([chat_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).unwrap();
     for row in rows {
         if let Ok((role, content)) = row {
@@ -1001,9 +1058,9 @@ async fn handle_send(message: &str, do_stream: bool) {
     }
 
     let final_content = if do_stream {
-        stream_completion(&settings.api_key, &settings.model_url, &settings.model_name, messages).await
+        stream_completion(&settings.api_key, &model_url, &model_name, messages).await
     } else {
-        match ai::chat_completion(&settings.api_key, &settings.model_url, &settings.model_name, messages).await {
+        match ai::chat_completion(&settings.api_key, &model_url, &model_name, messages).await {
             Ok(content) => {
                 print_result(&content);
                 Some(content)
@@ -1063,7 +1120,7 @@ fn handle_new(title_opt: Option<&str>, workspace_opt: Option<&str>, preset_opt: 
         read_session().active_folder_id
     };
     
-    let mut preset_locked = 0;
+    let preset_locked = 1;
     let mut chat_preset_id: Option<i64> = None;
     if let Some(p) = preset_opt {
         let pid: Option<i64> = if p.chars().all(|c| c.is_ascii_digit()) {
@@ -1076,18 +1133,55 @@ fn handle_new(title_opt: Option<&str>, workspace_opt: Option<&str>, preset_opt: 
         };
         if let Some(id) = pid {
             chat_preset_id = Some(id);
-            preset_locked = 1;
+        } else {
+            eprintln!("Warning: Preset '{}' not found, falling back to defaults.", p);
         }
     }
     
+    if chat_preset_id.is_none() {
+        // Fallback 1: CLI default
+        let cli_preset: Option<i64> = conn.query_row("SELECT cli_preset_id FROM settings WHERE id = 1", (), |r| r.get(0)).unwrap_or(None);
+        if cli_preset.is_some() {
+            chat_preset_id = cli_preset;
+        } else {
+            // Fallback 2: App default
+            let app_preset: Option<i64> = conn.query_row("SELECT selected_preset_id FROM settings WHERE id = 1", (), |r| r.get(0)).unwrap_or(None);
+            if app_preset.is_some() {
+                chat_preset_id = app_preset;
+            } else {
+                // Fallback 3: First preset
+                let first_preset: Option<i64> = conn.query_row("SELECT id FROM presets ORDER BY id ASC LIMIT 1", (), |r| r.get(0)).unwrap_or(None);
+                chat_preset_id = first_preset;
+            }
+        }
+    }
+    
+    let mut preset_name: Option<String> = None;
+    let mut model_url: Option<String> = None;
+    let mut model_name: Option<String> = None;
+    let mut customization: Option<String> = None;
+    
+    if let Some(pid) = chat_preset_id {
+        if let Ok((name, url, model, cust)) = conn.query_row(
+            "SELECT name, model_url, model_name, customization_prompt FROM presets WHERE id = ?1",
+            [pid],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))
+        ) {
+            preset_name = Some(name);
+            model_url = Some(url);
+            model_name = Some(model);
+            customization = Some(cust);
+        }
+    }
+
     let title = title_opt.unwrap_or("New Chat").to_string();
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
     
     let user_edited = if title_opt.is_some() { 1 } else { 0 };
     
     conn.execute(
-        "INSERT INTO chats (title, created_at, updated_at, archived, preset_locked, user_edited_title, folder_id, preset_id) VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7)",
-        params![title, now, now, preset_locked, user_edited, folder_id, chat_preset_id],
+        "INSERT INTO chats (title, created_at, updated_at, archived, preset_locked, user_edited_title, folder_id, preset_id, preset_name_snapshot, model_url_snapshot, model_name_snapshot, customization_snapshot) VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![title, now, now, preset_locked, user_edited, folder_id, chat_preset_id, preset_name, model_url, model_name, customization],
     ).unwrap();
     let new_id = conn.last_insert_rowid();
     
@@ -1098,7 +1192,7 @@ fn handle_new(title_opt: Option<&str>, workspace_opt: Option<&str>, preset_opt: 
 
     conn.execute("UPDATE settings SET last_chat_id = ?1 WHERE id = 1", [new_id]).unwrap();
     
-    print_result(&format!("Created chat: {} (ID: {})", title, new_id));
+    print_result(&format!("Created chat: {} (ID: {}) with preset: {}", title, new_id, preset_name.unwrap_or_else(|| "None".to_string())));
 }
 
 async fn stream_completion(api_key: &str, base_url: &str, model: &str, messages: Vec<(String, String)>) -> Option<String> {
