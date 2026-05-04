@@ -68,7 +68,6 @@ interface AppState {
   updatePreset: (id: number, name: string, modelUrl: string, modelName: string, customModelName: string | null, customizationPrompt: string) => Promise<void>;
   deletePreset: (id: number) => Promise<void>;
   duplicatePreset: (id: number) => Promise<number | null>;
-  exportPresets: (presetIds?: number[]) => Promise<string | null>;
   importPresets: (jsonContent: string) => Promise<number[] | null>;
 
   // Chat preset actions
@@ -539,15 +538,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       return newId;
     } catch (error) {
       console.error('Failed to duplicate preset', error);
-      return null;
-    }
-  },
-
-  exportPresets: async (presetIds) => {
-    try {
-      return await ipc.exportPresets(presetIds);
-    } catch (error) {
-      console.error('Failed to export presets', error);
       return null;
     }
   },

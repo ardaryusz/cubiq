@@ -28,9 +28,6 @@ export const updatePreset = (
 export const deletePreset = (id: number) => invoke<void>('delete_preset', { id });
 export const duplicatePreset = (id: number) => invoke<number>('duplicate_preset', { id });
 
-export const exportPresets = (presetIds?: number[]) =>
-    invoke<string>('export_presets', { presetIds: presetIds ?? null });
-
 export const exportPresetsToFile = (path: string, presetIds?: number[]) =>
     invoke<void>('export_presets_to_file', { path, presetIds: presetIds ?? null });
 
@@ -59,9 +56,6 @@ export const addMessage = (chatId: number, role: string, content: string) =>
     invoke<number>('add_message', { chatId, role, content });
 
 // ── AI ───────────────────────────────────────────────────────────────
-export const sendChatMessage = (chatId: number) =>
-    invoke<string>('send_chat_message', { chatId });
-
 export const testConnection = (apiKey: string, modelUrl: string, modelName: string) =>
     invoke<string>('test_connection', { apiKey, modelUrl, modelName });
 
@@ -72,7 +66,6 @@ export const createFolder = (name: string) => invoke<number>('create_folder', { 
 export const renameFolder = (id: number, name: string) => invoke<void>('rename_folder', { id, name });
 export const deleteFolder = (id: number) => invoke<void>('delete_folder', { id });
 export const getFolderChatCount = (folderId: number) => invoke<number>('get_folder_chat_count', { folderId });
-export const moveFolder = (id: number, position: number) => invoke<void>('move_folder', { id, position });
 export const moveChatToFolder = (chatId: number, folderId: number | null) =>
     invoke<void>('move_chat_to_folder', { chatId, folderId });
 
