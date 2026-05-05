@@ -6,6 +6,24 @@ This project loosely follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.4] - 2026-05-05
+
+### Changed
+
+- Refactored frontend shared helpers for markdown fence detection, stream payload types, theme handling, draft preset selection, and QuickAsk streaming listeners.
+- Removed unused frontend styles, dependencies, dead IPC wrappers, and unused store actions.
+- Improved Vite dev startup by prebundling `lucide-react`.
+
+### Fixed
+
+- Improved consistency of draft preset persistence between the main composer and folder composer.
+
+### Internal
+
+- Added shared `DraftPresetSelector`.
+- Added shared frontend utilities for theme and markdown handling.
+- Extracted QuickAsk streaming logic into `useQuickAskStream`.
+
 ## [1.0.3] - 2026-05-04
 
 ### Added
