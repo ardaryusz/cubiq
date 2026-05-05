@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useAppStore } from '../../store';
-import { SendHorizonal, Trash2, Edit2, Archive, AlertCircle, Lock, ChevronDown, Square } from 'lucide-react';
+import { SendHorizonal, Trash2, Edit2, Archive, AlertCircle, Lock, Square } from 'lucide-react';
 import { hasUnclosedFence } from '../../utils/markdown';
 import MarkdownRenderer from './MarkdownRenderer';
+import DraftPresetSelector from '../shared/DraftPresetSelector';
 import styles from './ChatArea.module.css';
 
 const LINE_HEIGHT = 24;   // px per line in the textarea
@@ -258,20 +259,14 @@ export default function ChatArea() {
     // Draft chat (no activeChatId) — show editable preset picker
     if (!activeChatId || !activeChat) {
       return (
-        <div className={styles.presetSelectorComposer}>
-          <select
-            className={styles.presetSelectComposer}
-            value={draftPresetId ?? ''}
-            onChange={e => {
-              const pid = Number(e.target.value);
-              setDraftPresetId(pid);
-            }}
-            title="Select preset for new chat"
-          >
-            {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <ChevronDown size={11} className={styles.presetSelectIconComposer} />
-        </div>
+        <DraftPresetSelector
+          presets={presets}
+          value={draftPresetId}
+          onChange={setDraftPresetId}
+          className={styles.presetSelectorComposer}
+          selectClassName={styles.presetSelectComposer}
+          iconClassName={styles.presetSelectIconComposer}
+        />
       );
     }
 

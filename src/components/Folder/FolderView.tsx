@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useAppStore } from '../../store';
 import { getFolderChatPreviews } from '../../lib/ipc';
 import type { FolderChatPreview } from '../../types';
-import { Search, FolderOpen, SendHorizonal, ChevronDown } from 'lucide-react';
+import { Search, FolderOpen, SendHorizonal } from 'lucide-react';
+import DraftPresetSelector from '../shared/DraftPresetSelector';
 import styles from './FolderView.module.css';
 
 export default function FolderView({ folderId }: { folderId: number }) {
@@ -74,20 +75,14 @@ export default function FolderView({ folderId }: { folderId: number }) {
             />
             <div className={styles.composerFooter}>
               <div className={styles.composerLeft}>
-                <div className={styles.presetSelectorComposer}>
-                  <select
-                    className={styles.presetSelectComposer}
-                    value={draftPresetId ?? ''}
-                    onChange={e => {
-                      const pid = Number(e.target.value);
-                      setDraftPresetId(pid);
-                    }}
-                    title="Select preset for new chat"
-                  >
-                    {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  <ChevronDown size={11} className={styles.presetSelectIconComposer} />
-                </div>
+                <DraftPresetSelector
+                  presets={presets}
+                  value={draftPresetId}
+                  onChange={setDraftPresetId}
+                  className={styles.presetSelectorComposer}
+                  selectClassName={styles.presetSelectComposer}
+                  iconClassName={styles.presetSelectIconComposer}
+                />
               </div>
               <button
                 type="submit"
