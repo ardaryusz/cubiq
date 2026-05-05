@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Pin, Trash2, ExternalLink, X, Square } from 'lucide-react';
 import MarkdownRenderer from './components/Chat/MarkdownRenderer';
 import { hasUnclosedFence } from './utils/markdown';
+import { applyAppTheme } from './utils/theme';
 import type { StreamDeltaPayload, StreamDonePayload, StreamErrorPayload } from './types/streaming';
 import * as ipc from './lib/ipc';
 import styles from './QuickAskApp.module.css';
@@ -22,21 +23,11 @@ function nextRequestId() {
   return `qa-${Date.now()}-${++_requestCounter}`;
 }
 
-function applyTheme(appTheme: string) {
-  const root = document.documentElement;
-  root.className = root.className
-    .split(' ')
-    .filter(c => !c.startsWith('theme-'))
-    .concat(`theme-${appTheme}`)
-    .join(' ')
-    .trim();
-}
-
 async function syncTheme() {
   try {
     const settings = await invoke<{ app_theme: string }>('get_settings');
     if (settings?.app_theme) {
-      applyTheme(settings.app_theme);
+      applyAppTheme(settings.app_theme);
       invoke('sync_quickask_theme', { appTheme: settings.app_theme }).catch(() => { });
     }
   } catch (err) {
@@ -182,7 +173,7 @@ export default function QuickAskApp() {
       console.log('[QA] registering stream listeners via global listen()');
       try {
         const unTheme = await listen<{ app_theme: string }>('cubiq:theme_changed', ({ payload }) => {
-          if (payload?.app_theme) applyTheme(payload.app_theme);
+          if (payload?.app_theme) applyAppTheme(payload.app_theme);
         });
         
         const unDelta = await listen<StreamDeltaPayload>('cubiq:stream_delta', ({ payload }) => {

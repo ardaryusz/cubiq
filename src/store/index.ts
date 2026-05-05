@@ -4,6 +4,7 @@ import * as ipc from '../lib/ipc';
 import { emit, listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import type { StreamDeltaPayload, StreamDonePayload, StreamErrorPayload } from '../types/streaming';
+import { applyAppTheme } from '../utils/theme';
 
 // Augment Window so we can use a typed sentinel without `as any`.
 declare global {
@@ -40,6 +41,7 @@ interface AppState {
   setActiveChat: (id: number | null) => void;
   setActiveFolder: (id: number | null) => void;
   setInitialDraftPrompt: (prompt: string | null) => void;
+  setDraftPresetId: (pid: number) => Promise<void>;
   setShowArchived: (show: boolean) => void;
   setSettingsOpen: (isOpen: boolean) => void;
   addOptimisticChat: (chat: Chat) => void;
@@ -92,21 +94,6 @@ interface AppState {
   restoreChats: (ids: number[]) => Promise<void>;
   deletePermanently: (ids: number[]) => Promise<void>;
   purgeExpiredDeletedChats: () => Promise<void>;
-}
-
-/** Apply the full app theme class to the document root. */
-function applyAppTheme(appTheme: string) {
-  const classes = document.documentElement.classList;
-  const toRemove: string[] = [];
-  classes.forEach(c => {
-    if (c.startsWith('theme-') || c === 'dark' || c.startsWith('accent-')) {
-      toRemove.push(c);
-    }
-  });
-  toRemove.forEach(c => classes.remove(c));
-  if (appTheme) {
-    classes.add(`theme-${appTheme}`);
-  }
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -189,6 +176,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   setInitialDraftPrompt: (prompt) => set({ initialDraftPrompt: prompt }),
+  setDraftPresetId: async (pid) => {
+    set({ draftPresetId: pid });
+    const { settings, updateSettings } = get();
+    if (settings) {
+      await updateSettings({ ...settings, selected_preset_id: pid });
+    }
+  },
   setShowArchived: (show) => set({ showArchived: show }),
   setSettingsOpen: (isOpen) => set({ isSettingsOpen: isOpen }),
   addOptimisticChat: (chat) => set((state) => {

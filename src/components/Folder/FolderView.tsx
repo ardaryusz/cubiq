@@ -14,6 +14,7 @@ export default function FolderView({ folderId }: { folderId: number }) {
   const chats = useAppStore(s => s.chats);
   const presets = useAppStore(s => s.presets);
   const draftPresetId = useAppStore(s => s.draftPresetId);
+  const setDraftPresetId = useAppStore(s => s.setDraftPresetId);
 
   const [previews, setPreviews] = useState<FolderChatPreview[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,7 +80,7 @@ export default function FolderView({ folderId }: { folderId: number }) {
                     value={draftPresetId ?? ''}
                     onChange={e => {
                       const pid = Number(e.target.value);
-                      useAppStore.setState({ draftPresetId: pid });
+                      setDraftPresetId(pid);
                     }}
                     title="Select preset for new chat"
                   >

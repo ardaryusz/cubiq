@@ -59,6 +59,7 @@ export default function ChatArea() {
   const loadMessages = useAppStore(state => state.loadMessages);
   const sendChatMessage = useAppStore(state => state.sendChatMessage);
   const clearSendError = useAppStore(state => state.clearSendError);
+  const setDraftPresetId = useAppStore(state => state.setDraftPresetId);
 
   const messages = useMemo(
     () => (activeChatId ? (allMessages[activeChatId] ?? []) : []),
@@ -263,11 +264,7 @@ export default function ChatArea() {
             value={draftPresetId ?? ''}
             onChange={e => {
               const pid = Number(e.target.value);
-              useAppStore.setState({ draftPresetId: pid });
-              const { settings, updateSettings } = useAppStore.getState();
-              if (settings) {
-                updateSettings({ ...settings, selected_preset_id: pid });
-              }
+              setDraftPresetId(pid);
             }}
             title="Select preset for new chat"
           >
