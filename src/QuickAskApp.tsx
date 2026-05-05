@@ -1,16 +1,16 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+
 import { invoke } from '@tauri-apps/api/core';
 import { Pin, Trash2, ExternalLink, X, Square } from 'lucide-react';
 import MarkdownRenderer from './components/Chat/MarkdownRenderer';
 import { hasUnclosedFence } from './utils/markdown';
 import { applyAppTheme } from './utils/theme';
-import type { StreamDeltaPayload, StreamDonePayload, StreamErrorPayload } from './types/streaming';
 import * as ipc from './lib/ipc';
+import { useQuickAskStream } from './hooks/useQuickAskStream';
 import styles from './QuickAskApp.module.css';
 
-interface Message {
+export interface Message {
   role: 'user' | 'assistant';
   content: string;
   isStreaming?: boolean;
@@ -49,8 +49,7 @@ export default function QuickAskApp() {
   const isPinnedRef = useRef(isPinned);
   const activeRequestRef = useRef<string | null>(null);
   const accumulatorRef = useRef('');
-  // Track registered unlisten functions so we can clean up properly
-  const unlistenFnsRef = useRef<UnlistenFn[]>([]);
+  // Track registered unlisten functions in hook
 
   // Throttled render text — drives the markdown renderer during streaming.
   // We update it using requestAnimationFrame so it streams at 60fps smoothly
@@ -160,124 +159,17 @@ export default function QuickAskApp() {
   }, [clearAll, dismissWindow, cancelActiveStream, clearUIState, handleOpenMain]);
 
   // ── EFFECT 2: streaming event listeners — mount ONCE, stay alive ───────────
-  // Uses the GLOBAL listen() from @tauri-apps/api/event.
-  // Why: backend uses app_handle.emit_to(label) → EventTarget::AnyLabel.
-  // win.listen() filters for EventTarget::WebviewWindow — a different variant
-  // in Tauri v2's event system, causing events to be silently dropped.
-  // The global listen() in this webview receives AnyLabel-targeted events correctly.
-  useEffect(() => {
-    let cancelled = false;
-    const unlistens: UnlistenFn[] = [];
-
-    const setup = async () => {
-      console.log('[QA] registering stream listeners via global listen()');
-      try {
-        const unTheme = await listen<{ app_theme: string }>('cubiq:theme_changed', ({ payload }) => {
-          if (payload?.app_theme) applyAppTheme(payload.app_theme);
-        });
-        
-        const unDelta = await listen<StreamDeltaPayload>('cubiq:stream_delta', ({ payload }) => {
-          console.log('[QA delta]', payload.request_id, 'active=', activeRequestRef.current,
-            'match=', payload.request_id === activeRequestRef.current,
-            'preview=', payload.delta.slice(0, 20));
-          if (payload.request_id !== activeRequestRef.current) return;
-
-          accumulatorRef.current += payload.delta;
-          const full = accumulatorRef.current;
-
-          // High-framerate markdown render and stream-following scroll (max ~60fps)
-          needsRenderRef.current = true;
-          if (!renderRafRef.current) {
-            renderRafRef.current = requestAnimationFrame(() => {
-              renderRafRef.current = null;
-              if (needsRenderRef.current) {
-                setRenderText(full);
-                needsRenderRef.current = false;
-              }
-              // QuickAsk scrolls to bottom continuously during streaming
-              messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
-            });
-          }
-        });
-
-        const unDone = await listen<StreamDonePayload>('cubiq:stream_done', ({ payload }) => {
-          console.log('[QA done]', payload.request_id, 'active=', activeRequestRef.current);
-          if (payload.request_id !== activeRequestRef.current) return;
-
-          const full = accumulatorRef.current;
-
-          // Flush any pending render and do a final render
-          if (renderRafRef.current) {
-            cancelAnimationFrame(renderRafRef.current);
-            renderRafRef.current = null;
-          }
-          needsRenderRef.current = false;
-          setRenderText(full);
-
-          setMessages(prev => {
-            const updated = [...prev];
-            const last = updated[updated.length - 1];
-            if (last && last.role === 'assistant') {
-              updated[updated.length - 1] = { ...last, content: full, isStreaming: false };
-            }
-            return updated;
-          });
-          activeRequestRef.current = null;
-          accumulatorRef.current = '';
-          setIsStreaming(false);
-          // Don't clear renderText immediately so the bubble doesn't flicker
-          // It will be cleared on handleSend
-        });
-
-        const unError = await listen<StreamErrorPayload>('cubiq:stream_error', ({ payload }) => {
-          console.error('[QA error]', payload.request_id, 'active=', activeRequestRef.current, payload.message);
-          if (payload.request_id !== activeRequestRef.current) return;
-
-          setMessages(prev => {
-            const updated = [...prev];
-            const last = updated[updated.length - 1];
-            if (last && last.role === 'assistant' && last.isStreaming) updated.pop();
-            return updated;
-          });
-
-          if (renderRafRef.current) {
-            cancelAnimationFrame(renderRafRef.current);
-            renderRafRef.current = null;
-          }
-          needsRenderRef.current = false;
-
-          const msg = payload.message;
-          setError(msg.includes('API key is not set') ? 'missing_key' : msg);
-          activeRequestRef.current = null;
-          accumulatorRef.current = '';
-          setIsStreaming(false);
-          setRenderText('');
-        });
-
-        if (cancelled) {
-          // Effect cleanup ran before setup finished (React Strict Mode double-invoke)
-          unTheme(); unDelta(); unDone(); unError();
-          console.log('[QA] listeners cancelled before setup completed, cleaned up');
-        } else {
-          unlistens.push(unTheme, unDelta, unDone, unError);
-          unlistenFnsRef.current = unlistens;
-          console.log('[QA] stream listeners registered OK');
-        }
-      } catch (err) {
-        console.error('[QA] Failed to register stream listeners:', err);
-      }
-    };
-
-    setup();
-
-    return () => {
-      cancelled = true;
-      // Immediately unregister any already-registered listeners
-      unlistens.forEach(fn => fn());
-      unlistenFnsRef.current = [];
-      console.log('[QA] stream listeners cleanup');
-    };
-  }, []); // ← empty deps: register once for the entire lifetime of the component
+  useQuickAskStream({
+    activeRequestRef,
+    accumulatorRef,
+    needsRenderRef,
+    renderRafRef,
+    messagesEndRef,
+    setRenderText,
+    setMessages,
+    setIsStreaming,
+    setError
+  });
 
   // ── auto-scroll ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -308,7 +200,7 @@ export default function QuickAskApp() {
     setRenderText(''); // Clear previous renderText
     setError(null);
 
-    console.log('[QA send] request_id=', requestId, 'listeners=', unlistenFnsRef.current.length);
+    console.log('[QA send] request_id=', requestId);
 
     try {
       const history = newMessages.map(m => ({ role: m.role, content: m.content }));
