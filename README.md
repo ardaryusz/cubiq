@@ -86,4 +86,4 @@ Coming soon...
 
 ## License
 
-TBD
+GPLv3
