@@ -1,12 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAppStore } from '../../store';
 import type { Settings as SettingsType, Preset, DeletedChat } from '../../types';
-import { X, Eye, Plus, Copy, Trash2, Edit2, Download, Upload, ArrowLeft, RotateCcw, Search, CheckSquare, Check } from 'lucide-react';
-import * as ipc from '../../lib/ipc';
-import { save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { X, Trash2, ArrowLeft, RotateCcw, Search, CheckSquare, Check } from 'lucide-react';
 import styles from './SettingsModal.module.css';
 import { AppearanceSettings } from './AppearanceSettings';
 import { ApiSettings } from './ApiSettings';
+import { PresetsSettings } from './PresetsSettings';
 import { MODEL_OPTIONS } from './constants';
 
 type View = 'main' | 'editPreset' | 'viewPreset';
@@ -53,7 +52,6 @@ export default function SettingsModal() {
   const deletePermanently = useAppStore(state => state.deletePermanently);
   const purgeExpired     = useAppStore(state => state.purgeExpiredDeletedChats);
 
-  const fileInputRef  = useRef<HTMLInputElement>(null);
   const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [form, setForm] = useState<SettingsType>({
@@ -275,57 +273,6 @@ export default function SettingsModal() {
     setEditor(null);
   };
 
-  // ── Native Export / Import ────────────────────────────────────────
-  const handleExportAll = async () => {
-    try {
-      const path = await saveDialog({
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-        defaultPath: 'cubiq-presets.json'
-      });
-      if (path) {
-        await ipc.exportPresetsToFile(path);
-        alert('All custom presets exported successfully!');
-      }
-    } catch (err) {
-      console.error('Export failed:', err);
-      alert('Export failed or canceled.');
-    }
-  };
-
-  const handleExportOne = async (id: number) => {
-    const preset = presets.find(p => p.id === id);
-    const fname = `cubiq-preset-${(preset?.name ?? 'preset').toLowerCase().replace(/\s+/g, '-')}.json`;
-    try {
-      const path = await saveDialog({
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-        defaultPath: fname
-      });
-      if (path) {
-        await ipc.exportPresetsToFile(path, [id]);
-        alert(`Preset "${preset?.name}" exported successfully!`);
-      }
-    } catch (err) {
-      console.error('Export failed:', err);
-      alert('Export failed or canceled.');
-    }
-  };
-
-  const handleImportClick = () => fileInputRef.current?.click();
-
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      await importPresets(text);
-      alert('Presets imported successfully!');
-    } catch (err) {
-      console.error('Import failed:', err);
-      alert('Failed to import presets. Invalid format.');
-    }
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
   // ── Preset Editor & View ──────────────────────────────────────────
   if ((view === 'editPreset' || view === 'viewPreset') && editor) {
     const isReadOnly = view === 'viewPreset';
@@ -438,50 +385,16 @@ export default function SettingsModal() {
 
           {/* ── PRESETS TAB ─── */}
           {activeTab === 'presets' && (
-            <>
-              <div className={styles.sectionTitle}>Default System Preset</div>
-              <div className={styles.field}>
-                <select className={styles.select} value={form.selected_preset_id ?? ''}
-                  onChange={e => handlePresetSelectChange(e.target.value)}>
-                  <option value="">— None —</option>
-                  {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-
-              <div className={styles.sectionTitle}>Preset Manager</div>
-              <div className={styles.presetList}>
-                {presets.map(p => (
-                  <div key={p.id} className={styles.presetItem}>
-                    <span className={styles.presetName}>{p.name}</span>
-                    {p.is_builtin && <span className={styles.presetBadge}>built-in</span>}
-                    <div className={styles.presetActions}>
-                      {p.is_builtin ? (
-                        <button className={styles.presetActionBtn} title="View" onClick={() => openEditOrViewPreset(p)}><Eye size={14} /></button>
-                      ) : (
-                        <button className={styles.presetActionBtn} title="Edit" onClick={() => openEditOrViewPreset(p)}><Edit2 size={14} /></button>
-                      )}
-                      <button className={styles.presetActionBtn} title="Duplicate" onClick={() => p.id && duplicatePreset(p.id)}><Copy size={14} /></button>
-                      {!p.is_builtin && (
-                        <button className={styles.presetActionBtn} title="Export" onClick={() => p.id && handleExportOne(p.id)}><Download size={14} /></button>
-                      )}
-                      {!p.is_builtin && (
-                        <button className={`${styles.presetActionBtn} ${styles.presetActionBtnDanger}`} title="Delete"
-                          onClick={() => { if (p.id && confirm(`Delete "${p.name}"?`)) deletePreset(p.id); }}>
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className={styles.presetToolbar}>
-                <button className={styles.toolbarBtn} onClick={openNewPreset}><Plus size={14} /> New</button>
-                <button className={styles.toolbarBtn} onClick={handleImportClick}><Upload size={14} /> Import</button>
-                <button className={styles.toolbarBtn} onClick={handleExportAll}><Download size={14} /> Export All</button>
-              </div>
-              <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
-            </>
+            <PresetsSettings
+              presets={presets}
+              selectedPresetId={form.selected_preset_id}
+              onSelectPreset={handlePresetSelectChange}
+              onNewPreset={openNewPreset}
+              onEditOrViewPreset={openEditOrViewPreset}
+              onDuplicatePreset={duplicatePreset}
+              onDeletePreset={deletePreset}
+              onImportPresets={importPresets}
+            />
           )}
 
           {/* ── TRASH TAB ─── */}
