@@ -1,20 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAppStore } from '../../store';
 import type { Settings as SettingsType, Preset, DeletedChat } from '../../types';
-import { X, Eye, EyeOff, Wifi, CheckCircle, XCircle, Loader2, Plus, Copy, Trash2, Edit2, Download, Upload, ArrowLeft, RotateCcw, Search, CheckSquare, Check } from 'lucide-react';
+import { X, Eye, Plus, Copy, Trash2, Edit2, Download, Upload, ArrowLeft, RotateCcw, Search, CheckSquare, Check } from 'lucide-react';
 import * as ipc from '../../lib/ipc';
 import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import styles from './SettingsModal.module.css';
 import { AppearanceSettings } from './AppearanceSettings';
-
-
-const MODEL_OPTIONS = [
-  'llama-3.1-8b-instant',
-  'llama-3.3-70b-versatile',
-  'openai/gpt-oss-120b',
-  'openai/gpt-oss-20b',
-  'qwen/qwen3-32b',
-];
+import { ApiSettings } from './ApiSettings';
+import { MODEL_OPTIONS } from './constants';
 
 type View = 'main' | 'editPreset' | 'viewPreset';
 type Tab = 'appearance' | 'api' | 'presets' | 'trash';
@@ -75,9 +68,6 @@ export default function SettingsModal() {
   });
 
   const [activeTab, setActiveTab] = useState<Tab>('appearance');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [testMessage, setTestMessage] = useState('');
   const [view, setView] = useState<View>('main');
   const [editor, setEditor] = useState<PresetEditorState | null>(null);
 
@@ -235,20 +225,6 @@ export default function SettingsModal() {
 
   const handlePresetSelectChange = (value: string) => {
     savePatch({ selected_preset_id: value ? Number(value) : undefined });
-  };
-
-  // ── Test connection ───────────────────────────────────────────────
-  const handleTestConnection = async () => {
-    setTestStatus('testing');
-    setTestMessage('');
-    try {
-      const reply = await ipc.testConnection(form.api_key, form.model_url, form.model_name);
-      setTestStatus('success');
-      setTestMessage(`Connected! AI replied: "${reply.slice(0, 80)}${reply.length > 80 ? '…' : ''}"`);
-    } catch (e) {
-      setTestStatus('error');
-      setTestMessage(String(e));
-    }
   };
 
   // ── Preset editor ─────────────────────────────────────────────────
@@ -452,71 +428,12 @@ export default function SettingsModal() {
 
           {/* ── API TAB ─── */}
           {activeTab === 'api' && (
-            <>
-              <div className={styles.sectionTitle}>API Credentials</div>
-              <div className={styles.field}>
-                <label htmlFor="setting-api-key">Groq API Key</label>
-                <div className={styles.inputWrapper}>
-                  <input
-                    id="setting-api-key"
-                    type={showApiKey ? 'text' : 'password'}
-                    className={styles.inputWithToggle}
-                    value={form.api_key}
-                    onChange={e => handleTextChange({ api_key: e.target.value })}
-                    onBlur={() => saveNow(form)}
-                    placeholder="gsk_…"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  <button type="button" className={styles.eyeToggle}
-                    aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
-                    onMouseDown={e => { e.preventDefault(); setShowApiKey(v => !v); }}>
-                    {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              <div className={styles.field}>
-                <label htmlFor="setting-model-url">Model URL</label>
-                <input
-                  id="setting-model-url"
-                  className={styles.input}
-                  value={form.model_url}
-                  onChange={e => handleTextChange({ model_url: e.target.value })}
-                  onBlur={() => saveNow(form)}
-                  placeholder="https://api.groq.com/openai/v1"
-                />
-              </div>
-
-              <div className={styles.field}>
-                <label htmlFor="setting-model-name">Default Model</label>
-                <select
-                  id="setting-model-name"
-                  className={styles.select}
-                  value={form.model_name}
-                  onChange={e => savePatch({ model_name: e.target.value })}
-                >
-                  {MODEL_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-
-              <div className={styles.sectionTitle}>Test Connection</div>
-              <div className={styles.field}>
-                <label>Connection Diagnostic</label>
-                <div className={styles.testRow}>
-                  <button className={styles.testBtn} onClick={handleTestConnection} disabled={testStatus === 'testing'}>
-                    {testStatus === 'testing' ? <Loader2 size={16} className={styles.spin} /> : <Wifi size={16} />}
-                    {testStatus === 'testing' ? 'Testing…' : 'Test API Key'}
-                  </button>
-                  {testStatus === 'success' && (
-                    <div className={styles.testSuccess}><CheckCircle size={14} /><span>{testMessage}</span></div>
-                  )}
-                  {testStatus === 'error' && (
-                    <div className={styles.testError}><XCircle size={14} /><span>{testMessage}</span></div>
-                  )}
-                </div>
-              </div>
-            </>
+            <ApiSettings
+              form={form}
+              onTextChange={handleTextChange}
+              onSaveNow={saveNow}
+              onSavePatch={savePatch}
+            />
           )}
 
           {/* ── PRESETS TAB ─── */}
