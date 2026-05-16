@@ -5,19 +5,8 @@ import { X, Eye, EyeOff, Wifi, CheckCircle, XCircle, Loader2, Plus, Copy, Trash2
 import * as ipc from '../../lib/ipc';
 import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import styles from './SettingsModal.module.css';
+import { AppearanceSettings } from './AppearanceSettings';
 
-const FULL_THEMES = [
-  { id: 'cubiq-dark', name: 'Cubiq Dark' },
-  { id: 'cubiq-light', name: 'Cubiq Light' },
-  { id: 'midnight-violet', name: 'Midnight Violet' },
-  { id: 'ocean-glass', name: 'Ocean Glass' },
-  { id: 'rose-noir', name: 'Rose Noir' },
-  { id: 'amber-terminal', name: 'Amber Terminal' },
-  { id: 'slate-minimal', name: 'Slate Minimal' },
-  { id: 'paper-studio', name: 'Paper Studio' },
-  { id: 'mint-studio', name: 'Mint Studio' },
-  { id: 'monochrome-pro', name: 'Monochrome Pro' },
-];
 
 const MODEL_OPTIONS = [
   'llama-3.1-8b-instant',
@@ -455,28 +444,10 @@ export default function SettingsModal() {
 
           {/* ── APPEARANCE TAB ─── */}
           {activeTab === 'appearance' && (
-            <>
-              <div className={styles.sectionTitle}>Theme Packs</div>
-              <div className={styles.themeGrid}>
-                {FULL_THEMES.map(theme => (
-                  <button
-                    key={theme.id}
-                    className={`${styles.themeCard} ${form.app_theme === theme.id ? styles.themeCardActive : ''}`}
-                    onClick={() => handleThemeChange(theme.id)}
-                  >
-                    <div className={`${styles.themePreview} theme-${theme.id}`}>
-                      <div className={styles.tpHeader} />
-                      <div className={styles.tpBody}>
-                        <div className={styles.tpUser} />
-                        <div className={styles.tpAsst} />
-                        <div className={styles.tpComposer} />
-                      </div>
-                    </div>
-                    <span>{theme.name}</span>
-                  </button>
-                ))}
-              </div>
-            </>
+            <AppearanceSettings
+              activeTheme={form.app_theme}
+              onThemeChange={handleThemeChange}
+            />
           )}
 
           {/* ── API TAB ─── */}
