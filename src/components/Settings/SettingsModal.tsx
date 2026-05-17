@@ -1,27 +1,18 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAppStore } from '../../store';
 import type { Settings as SettingsType, Preset } from '../../types';
-import { X, ArrowLeft } from 'lucide-react';
+import { X } from 'lucide-react';
 import styles from './SettingsModal.module.css';
 import { AppearanceSettings } from './AppearanceSettings';
 import { ApiSettings } from './ApiSettings';
 import { PresetsSettings } from './PresetsSettings';
 import { TrashSettings } from './TrashSettings';
+import { PresetEditor, type PresetEditorState } from './PresetEditor';
 import { MODEL_OPTIONS } from './constants';
 
 type View = 'main' | 'editPreset' | 'viewPreset';
 type Tab = 'appearance' | 'api' | 'presets' | 'trash';
 
-interface PresetEditorState {
-  id: number | null;
-  name: string;
-  modelUrl: string;
-  modelName: string;
-  useCustomModel: boolean;
-  customModelName: string;
-  customizationPrompt: string;
-  isBuiltin: boolean;
-}
 
 
 export default function SettingsModal() {
@@ -152,70 +143,14 @@ export default function SettingsModal() {
   if ((view === 'editPreset' || view === 'viewPreset') && editor) {
     const isReadOnly = view === 'viewPreset';
     return (
-      <div className={styles.overlay} onClick={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}>
-        <div className={styles.modal}>
-          <div className={styles.header}>
-            <div className={styles.headerTop}>
-              <h2>{isReadOnly ? 'Preset Details' : (editor.id ? 'Edit Preset' : 'New Preset')}</h2>
-              <button className={styles.closeBtn} onClick={() => setSettingsOpen(false)} aria-label="Close"><X size={20} /></button>
-            </div>
-          </div>
-          <div className={styles.content}>
-            <button className={styles.editorBackBtn} onClick={() => { setView('main'); setEditor(null); }}>
-              <ArrowLeft size={14} /> Back to Settings
-            </button>
-
-            <div className={styles.field}>
-              <label>Preset Name</label>
-              {isReadOnly ? <div className={styles.readOnlyValue}>{editor.name}</div>
-                : <input className={styles.input} value={editor.name} onChange={e => setEditor({ ...editor, name: e.target.value })} placeholder="My Custom Preset" />}
-            </div>
-
-            <div className={styles.field}>
-              <label>Model URL</label>
-              {isReadOnly ? <div className={styles.readOnlyValue}>{editor.modelUrl}</div>
-                : <input className={styles.input} value={editor.modelUrl} onChange={e => setEditor({ ...editor, modelUrl: e.target.value })} />}
-            </div>
-
-            <div className={styles.field}>
-              <label>Model</label>
-              {isReadOnly ? <div className={styles.readOnlyValue}>{editor.useCustomModel ? editor.customModelName : editor.modelName}</div>
-                : <select className={styles.select} value={editor.modelName} onChange={e => setEditor({ ...editor, modelName: e.target.value })}>
-                    {MODEL_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-              }
-            </div>
-
-            {!isReadOnly && (
-              <div className={styles.checkboxRow}>
-                <input type="checkbox" id="custom-model-check" checked={editor.useCustomModel} onChange={e => setEditor({ ...editor, useCustomModel: e.target.checked })} />
-                <label htmlFor="custom-model-check">Custom model name override</label>
-              </div>
-            )}
-
-            {!isReadOnly && editor.useCustomModel && (
-              <div className={styles.field}>
-                <input className={styles.input} value={editor.customModelName} onChange={e => setEditor({ ...editor, customModelName: e.target.value })} placeholder="custom-model-name" />
-              </div>
-            )}
-
-            <div className={styles.field}>
-              <label>Customization Prompt</label>
-              {isReadOnly ? <div className={styles.readOnlyValue}>{editor.customizationPrompt || '(No prompt defined)'}</div>
-                : <textarea className={styles.editorTextarea} value={editor.customizationPrompt} onChange={e => setEditor({ ...editor, customizationPrompt: e.target.value })} placeholder="Instructions for how the AI should behave..." rows={4} />}
-            </div>
-
-            <div className={styles.editorActions}>
-              <button className={styles.editorCancelBtn} onClick={() => { setView('main'); setEditor(null); }}>
-                {isReadOnly ? 'Close' : 'Cancel'}
-              </button>
-              {!isReadOnly && (
-                <button className={styles.editorSaveBtn} onClick={handleSavePreset} disabled={!editor.name.trim()}>Save Preset</button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <PresetEditor
+        editor={editor}
+        isReadOnly={isReadOnly}
+        onChange={setEditor}
+        onSave={handleSavePreset}
+        onCancel={() => { setView('main'); setEditor(null); }}
+        onCloseGlobal={() => setSettingsOpen(false)}
+      />
     );
   }
 
